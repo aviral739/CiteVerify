@@ -6,6 +6,7 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional
 
+from app.models.schemas import EvidenceAvailabilityEnum
 from app.stages.s2_references.doi_utils import extract_doi, normalize_doi
 from app.stages.s4_resolve.models import (
     ResolutionSourceEnum,
@@ -13,6 +14,13 @@ from app.stages.s4_resolve.models import (
     S4ResolvedReference,
 )
 from app.stages.s4_resolve.scholarly_clients import ScholarlyAPIClient, scholarly_client
+
+try:
+    from app.stages.s4_resolve.europe_pmc import EuropePMCClient, EuropePMCResult, europe_pmc_client
+except ImportError:
+    EuropePMCClient = None  # type: ignore
+    EuropePMCResult = None  # type: ignore
+    europe_pmc_client = None  # type: ignore
 
 logger = logging.getLogger("citeverify.stages.s4_resolve.resolver")
 
@@ -66,6 +74,57 @@ def compute_title_similarity(title1: Optional[str], title2: Optional[str]) -> fl
     return round(float(similarity), 4)
 
 
+def _extract_epmc_data(res: Any) -> Dict[str, Any]:
+    """Extract standard dictionary attributes from a EuropePMCResult instance or dict."""
+    if res is None:
+        return {}
+    if hasattr(res, "to_dict"):
+        return res.to_dict()
+    elif isinstance(res, dict):
+        return res
+    return {
+        "doi": getattr(res, "doi", None),
+        "pmcid": getattr(res, "pmcid", None),
+        "pmid": getattr(res, "pmid", None),
+        "title": getattr(res, "title", None),
+        "authors": getattr(res, "authors", None),
+        "year": getattr(res, "year", None),
+        "venue": getattr(res, "venue", None),
+        "abstract": getattr(res, "abstract", None),
+        "full_text": getattr(res, "full_text", None),
+        "full_text_sections": getattr(res, "full_text_sections", {}),
+        "is_open_access": getattr(res, "is_open_access", False),
+        "availability": getattr(res, "availability", None),
+        "is_retracted": getattr(res, "is_retracted", False),
+        "retraction_notice": getattr(res, "retraction_notice", None),
+        "source": getattr(res, "source", "europepmc"),
+        "confidence": getattr(res, "confidence", 0.95),
+        "warnings": getattr(res, "warnings", []),
+    }
+
+
+def normalize_availability_state(
+    avail: Any,
+    has_full_text: bool = False,
+    has_oa_pdf: bool = False,
+    has_abstract: bool = False,
+) -> str:
+    """Normalize availability to 'full_text', 'abstract_only', or 'unavailable'."""
+    if has_full_text or has_oa_pdf:
+        return "full_text"
+    if avail is not None:
+        val_str = str(getattr(avail, "value", avail)).lower()
+        if "full_text" in val_str:
+            return "full_text"
+        elif "abstract" in val_str:
+            return "abstract_only"
+        elif "unavailable" in val_str:
+            return "unavailable"
+    if has_abstract:
+        return "abstract_only"
+    return "unavailable"
+
+
 class ReferenceResolver:
     """Multi-stage resolver for bibliographic references.
 
@@ -74,12 +133,23 @@ class ReferenceResolver:
     2. OpenAlex (for OA discovery, abstracts & retractions)
     3. Europe PMC (for full-text XML / OA when OpenAlex lacks full text)
     4. Semantic Scholar (for retraction & venue enrichment)
-    5. Title-based OpenAlex search fallback
-    6. Clean unhallucinated fallback with explicit status
+    5. PMCID-based Europe PMC lookup fallback when DOI is missing
+    6. Title-based OpenAlex search fallback
+    7. Clean unhallucinated fallback with explicit status
     """
 
-    def __init__(self, api_client: Optional[ScholarlyAPIClient] = None):
+    def __init__(
+        self,
+        api_client: Optional[ScholarlyAPIClient] = None,
+        epmc_client: Optional[Any] = None,
+    ):
         self.client = api_client or scholarly_client
+        self.epmc_client = (
+            epmc_client
+            or getattr(self.client, "epmc_client", None)
+            or getattr(self.client, "europe_pmc_client", None)
+            or europe_pmc_client
+        )
 
     async def resolve_reference(self, raw_ref: Dict[str, Any]) -> S4ResolvedReference:
         """Resolve a single reference item into a canonical S4ResolvedReference."""
@@ -91,7 +161,22 @@ class ReferenceResolver:
         provided_doi = raw_ref.get("doi") or extract_doi(raw_text)
         norm_doi = normalize_doi(provided_doi) if provided_doi else None
 
+        # Check for PMCID in raw_ref or raw_text
+        pmcid_candidate = raw_ref.get("pmcid") or raw_ref.get("pmc_id")
+        if not pmcid_candidate and raw_text:
+            pmcid_match = re.search(r"\b(PMC\d+)\b", raw_text, re.IGNORECASE)
+            if pmcid_match:
+                pmcid_candidate = pmcid_match.group(1).upper()
+
         warnings: List[str] = []
+
+        epmc_instance = (
+            self.epmc_client
+            or getattr(self.client, "epmc_client", None)
+            or getattr(self.client, "europe_pmc_client", None)
+            or (self.client if hasattr(self.client, "get_by_doi") else None)
+            or europe_pmc_client
+        )
 
         # ---------------- Strategy 1: Resolving by DOI ----------------
         if norm_doi:
@@ -117,31 +202,51 @@ class ReferenceResolver:
             # 1b. Try OpenAlex for OA PDF URL, abstract, and retraction status
             openalex_data = await self.client.resolve_openalex_doi(norm_doi)
 
-            # 1c. Try Europe PMC if OpenAlex did not provide full-text PDF or if caller client supports Europe PMC
-            epmc_data = None
-            has_epmc = (
-                getattr(self.client, "resolve_europe_pmc", None)
-                or getattr(self.client, "resolve_europe_pmc_doi", None)
-                or getattr(self.client, "resolve_europepmc_doi", None)
-                or getattr(self.client, "get_europe_pmc", None)
-            )
-            if has_epmc and not (openalex_data and openalex_data.get("oa_pdf_url")):
+            # 1c. Try Europe PMC via get_by_doi when OpenAlex lacks usable full text
+            epmc_data: Optional[Dict[str, Any]] = None
+            openalex_has_full_text = bool(openalex_data and openalex_data.get("oa_pdf_url"))
+
+            if epmc_instance and not openalex_has_full_text:
                 try:
-                    epmc_data = await has_epmc(norm_doi)
+                    if hasattr(epmc_instance, "get_by_doi"):
+                        epmc_res = await epmc_instance.get_by_doi(norm_doi, retrieve_full_text=True)
+                        if epmc_res:
+                            epmc_data = _extract_epmc_data(epmc_res)
+                    elif hasattr(epmc_instance, "resolve_europe_pmc"):
+                        epmc_res = await epmc_instance.resolve_europe_pmc(norm_doi)
+                        if epmc_res:
+                            epmc_data = _extract_epmc_data(epmc_res)
                 except Exception as exc:
                     logger.warning(f"Error querying Europe PMC for DOI {norm_doi}: {exc}")
 
-            # 1d. Try Semantic Scholar if retraction status or OA URL is needed
+            # 1d. Try Semantic Scholar if full text or OA is still needed
             s2_data = None
-            has_full_source = (openalex_data and openalex_data.get("oa_pdf_url")) or (epmc_data and (epmc_data.get("full_text") or epmc_data.get("oa_pdf_url")))
+            has_full_source = (
+                openalex_has_full_text
+                or (epmc_data and (epmc_data.get("full_text") or epmc_data.get("is_open_access")))
+            )
             if not has_full_source:
                 s2_data = await self.client.resolve_semanticscholar_doi(norm_doi)
 
-            if crossref_data or openalex_data or epmc_data or s2_data:
+            epmc_has_content = bool(
+                epmc_data
+                and (
+                    epmc_data.get("full_text")
+                    or epmc_data.get("abstract")
+                    or (
+                        epmc_data.get("title")
+                        and str(epmc_data.get("availability", "")).lower()
+                        not in ("unavailable", "evidenceavailabilityenum.unavailable")
+                    )
+                )
+            )
+
+            if crossref_data or openalex_data or epmc_has_content or s2_data:
                 # Merge metadata prioritizing authoritative attributes
-                primary = crossref_data or openalex_data or epmc_data or s2_data
-                secondary = openalex_data or epmc_data or s2_data or crossref_data
-                tertiary = epmc_data or s2_data or {}
+                # Authority order: Crossref (primary metadata) -> OpenAlex -> Europe PMC -> Semantic Scholar
+                primary = crossref_data or openalex_data or (epmc_data if epmc_has_content else None) or s2_data or {}
+                secondary = openalex_data or (epmc_data if epmc_has_content else None) or s2_data or crossref_data or {}
+                tertiary = (epmc_data if epmc_has_content else None) or s2_data or {}
 
                 canonical_title = (
                     primary.get("title")
@@ -154,13 +259,14 @@ class ReferenceResolver:
                 merged_authors = primary.get("authors") or secondary.get("authors") or tertiary.get("authors") or raw_ref.get("authors")
                 merged_venue = primary.get("venue") or secondary.get("venue") or tertiary.get("venue")
 
-                # PMCID
+                # PMCID: Enriched from Europe PMC or OpenAlex
                 pmcid = (
                     (epmc_data.get("pmcid") if epmc_data else None)
                     or (openalex_data.get("pmcid") if openalex_data else None)
+                    or pmcid_candidate
                 )
 
-                # Full-text source text (e.g. Europe PMC XML text)
+                # Full-text source text (enriched from Europe PMC XML without downloading duplicate PDF)
                 full_text = (
                     (epmc_data.get("full_text") if epmc_data else None)
                     or (openalex_data.get("full_text") if openalex_data else None)
@@ -180,7 +286,7 @@ class ReferenceResolver:
                     or (s2_data.get("abstract") if s2_data else None)
                 )
 
-                # Retraction notice
+                # Retraction notice (OR across all authoritative sources)
                 is_retracted = bool(
                     (crossref_data and crossref_data.get("is_retracted"))
                     or (openalex_data and openalex_data.get("is_retracted"))
@@ -200,20 +306,29 @@ class ReferenceResolver:
 
                 status = ResolutionStatusEnum.RETRACTED if is_retracted else ResolutionStatusEnum.RESOLVED
 
-                # Provenance
-                if epmc_data and (epmc_data.get("full_text") or (not crossref_data and not openalex_data)):
-                    source = ResolutionSourceEnum.EUROPE_PMC
-                else:
-                    source_str = primary.get("source", "crossref")
+                # Provenance: preserve primary bibliographic authority
+                if crossref_data:
+                    source_str = crossref_data.get("source", "crossref")
                     source = ResolutionSourceEnum(source_str) if source_str in ResolutionSourceEnum._value2member_map_ else ResolutionSourceEnum.CROSSREF
-
-                # Availability state
-                if full_text or oa_pdf_url:
-                    availability_state = "full_text"
-                elif abstract:
-                    availability_state = "abstract_only"
+                elif openalex_data:
+                    source_str = openalex_data.get("source", "openalex")
+                    source = ResolutionSourceEnum(source_str) if source_str in ResolutionSourceEnum._value2member_map_ else ResolutionSourceEnum.OPENALEX
+                elif epmc_has_content:
+                    source = ResolutionSourceEnum.EUROPE_PMC
+                elif s2_data:
+                    source_str = s2_data.get("source", "semanticscholar")
+                    source = ResolutionSourceEnum(source_str) if source_str in ResolutionSourceEnum._value2member_map_ else ResolutionSourceEnum.SEMANTIC_SCHOLAR
                 else:
-                    availability_state = "unavailable"
+                    source = ResolutionSourceEnum.FALLBACK
+
+                # Availability state normalization
+                epmc_avail = epmc_data.get("availability") if epmc_data else None
+                availability_state = normalize_availability_state(
+                    epmc_avail,
+                    has_full_text=bool(full_text),
+                    has_oa_pdf=bool(oa_pdf_url),
+                    has_abstract=bool(abstract),
+                )
 
                 return S4ResolvedReference(
                     id=stable_id,
@@ -230,7 +345,12 @@ class ReferenceResolver:
                     abstract=abstract,
                     full_text=full_text,
                     oa_pdf_url=oa_pdf_url,
-                    is_open_access=bool(oa_pdf_url or full_text or (openalex_data and openalex_data.get("is_open_access"))),
+                    is_open_access=bool(
+                        oa_pdf_url
+                        or full_text
+                        or (openalex_data and openalex_data.get("is_open_access"))
+                        or (epmc_data and epmc_data.get("is_open_access"))
+                    ),
                     availability_state=availability_state,
                     doi_title_mismatch=doi_title_mismatch,
                     title_similarity=title_similarity,
@@ -239,6 +359,72 @@ class ReferenceResolver:
                     confidence=0.98 if is_retracted or crossref_data else 0.90,
                     source=source,
                     status=status,
+                    raw_citation=raw_text,
+                    warnings=warnings,
+                )
+
+        # ---------------- Strategy 1.5: Resolving by PMCID when DOI is missing ----------------
+        if not norm_doi and pmcid_candidate and epmc_instance and hasattr(epmc_instance, "get_by_pmcid"):
+            epmc_pmcid_data = None
+            try:
+                epmc_res = await epmc_instance.get_by_pmcid(pmcid_candidate, retrieve_full_text=True)
+                if epmc_res:
+                    epmc_pmcid_data = _extract_epmc_data(epmc_res)
+            except Exception as exc:
+                logger.warning(f"Error querying Europe PMC for PMCID '{pmcid_candidate}': {exc}")
+
+            epmc_pmcid_has_content = bool(
+                epmc_pmcid_data
+                and (
+                    epmc_pmcid_data.get("full_text")
+                    or epmc_pmcid_data.get("abstract")
+                    or (
+                        epmc_pmcid_data.get("title")
+                        and str(epmc_pmcid_data.get("availability", "")).lower()
+                        not in ("unavailable", "evidenceavailabilityenum.unavailable")
+                    )
+                )
+            )
+
+            if epmc_pmcid_has_content:
+                disc_doi = normalize_doi(epmc_pmcid_data.get("doi"))
+                ftext = epmc_pmcid_data.get("full_text")
+                abstr = epmc_pmcid_data.get("abstract")
+                avail = normalize_availability_state(
+                    epmc_pmcid_data.get("availability"),
+                    has_full_text=bool(ftext),
+                    has_oa_pdf=False,
+                    has_abstract=bool(abstr),
+                )
+                is_ret = bool(epmc_pmcid_data.get("is_retracted", False))
+                ret_notice = epmc_pmcid_data.get("retraction_notice")
+                if is_ret:
+                    warnings.append(f"WARNING: Cited paper is marked as RETRACTED: {ret_notice}")
+
+                return S4ResolvedReference(
+                    id=stable_id,
+                    citation_key=citation_key,
+                    reference_id=reference_id,
+                    title=epmc_pmcid_data.get("title") or provided_title or f"PMC Article {pmcid_candidate}",
+                    original_title=provided_title,
+                    doi=disc_doi,
+                    pmcid=epmc_pmcid_data.get("pmcid") or pmcid_candidate,
+                    authors=epmc_pmcid_data.get("authors") or raw_ref.get("authors"),
+                    year=epmc_pmcid_data.get("year") or raw_ref.get("year"),
+                    venue=epmc_pmcid_data.get("venue"),
+                    url=f"https://europepmc.org/article/PMC/{pmcid_candidate.replace('PMC', '')}",
+                    abstract=abstr,
+                    full_text=ftext,
+                    oa_pdf_url=None,
+                    is_open_access=bool(epmc_pmcid_data.get("is_open_access", False) or ftext),
+                    availability_state=avail,
+                    doi_title_mismatch=False,
+                    title_similarity=None,
+                    is_retracted=is_ret,
+                    retraction_notice=ret_notice,
+                    confidence=epmc_pmcid_data.get("confidence", 0.95),
+                    source=ResolutionSourceEnum.EUROPE_PMC,
+                    status=ResolutionStatusEnum.RETRACTED if is_ret else ResolutionStatusEnum.RESOLVED,
                     raw_citation=raw_text,
                     warnings=warnings,
                 )
@@ -276,7 +462,7 @@ class ReferenceResolver:
                     title=matched_title,
                     original_title=provided_title,
                     doi=matched_work.get("doi"),
-                    pmcid=matched_work.get("pmcid"),
+                    pmcid=matched_work.get("pmcid") or pmcid_candidate,
                     authors=matched_work.get("authors") or raw_ref.get("authors"),
                     year=matched_work.get("year") or raw_ref.get("year"),
                     venue=matched_work.get("venue"),
@@ -308,7 +494,7 @@ class ReferenceResolver:
             title=fallback_title,
             original_title=provided_title,
             doi=norm_doi,
-            pmcid=None,
+            pmcid=pmcid_candidate,
             authors=raw_ref.get("authors"),
             year=raw_ref.get("year"),
             venue=None,
