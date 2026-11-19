@@ -52,3 +52,6 @@ class ReviewRepository(BaseRepository[Review]):
         )
         await self.add(review)
         return review
+
+    create_review = create
+

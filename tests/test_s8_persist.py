@@ -380,7 +380,7 @@ async def test_transaction_rollback_on_injected_failure(engine, sample_pipeline_
     inp = S8PersistInput(**sample_pipeline_data)
 
     # Inject failure during results persistence
-    with patch("app.stages.s8_persist.repositories.ResultRepository.insert_result", side_effect=RuntimeError("Simulated DB Crash")):
+    with patch("app.repositories.ResultRepository.create", side_effect=RuntimeError("Simulated DB Crash")):
         with pytest.raises(RuntimeError, match="Simulated DB Crash"):
             await engine.persist_pipeline_outputs(inp)
 
