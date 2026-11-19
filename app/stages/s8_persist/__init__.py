@@ -1,36 +1,53 @@
-"""Stage 8: Persistence.
+"""Stage 8: Persistence Engine.
 
-Future Responsibility:
-Commit all extracted claims, references, retrieved evidence snippets, verification results,
-and generated document reports into the relational database.
-Emit audit logs and final completion events.
-
-TODO:
-- Persist structured records atomically using SQLAlchemy sessions.
-- Trigger final completion notification events.
+Commits all extracted claims, references, retrieved evidence snippets,
+verification results, and generated document reports into relational database storage.
+Emits audit logs and final pipeline events.
 """
 
-from typing import Any, Dict
-from pydantic import BaseModel
+from typing import Optional
+
+from app.stages.s8_persist.engine import PersistenceEngine, persistence_engine
+from app.stages.s8_persist.models import S8PersistInput, S8PersistOutput
+from app.stages.s8_persist.repositories import (
+    AuditLogRepository,
+    ClaimRepository,
+    DocumentReportRepository,
+    DocumentRepository,
+    EvidenceRepository,
+    EventRepository,
+    JobRepository,
+    ReferenceRepository,
+    ResultRepository,
+    ReviewRepository,
+)
+
+__all__ = [
+    "run_stage_8",
+    "S8PersistInput",
+    "S8PersistOutput",
+    "PersistenceEngine",
+    "persistence_engine",
+    "DocumentRepository",
+    "JobRepository",
+    "ReferenceRepository",
+    "ClaimRepository",
+    "EvidenceRepository",
+    "ResultRepository",
+    "ReviewRepository",
+    "EventRepository",
+    "AuditLogRepository",
+    "DocumentReportRepository",
+]
 
 
-class S8PersistInput(BaseModel):
-    document_id: str
-    assessment_data: Dict[str, Any]
+async def run_stage_8(
+    input_data: S8PersistInput,
+    engine: Optional[PersistenceEngine] = None,
+) -> S8PersistOutput:
+    """Execute Stage 8: Persistence pipeline entrypoint.
 
-
-class S8PersistOutput(BaseModel):
-    document_id: str
-    persisted: bool
-    status: str
-
-
-async def run_stage_8(input_data: S8PersistInput) -> S8PersistOutput:
-    """Execute Stage 8: Persistence skeleton entrypoint."""
-    # SKELETON PLACEHOLDER
-    return S8PersistOutput(
-        document_id=input_data.document_id,
-        persisted=True,
-        status="completed",
-    )
-
+    Atomically commits outputs from S1–S7 into the database.
+    """
+    active_engine = engine or persistence_engine
+    return await active_engine.persist_pipeline_outputs(input_data)
