@@ -84,13 +84,17 @@ def segment_bibliography_entries(bib_text: str) -> List[Tuple[str, str]]:
 
     entries: List[Tuple[str, str]] = []
 
-    # Check for [1] bracket numbered pattern
+    # Check for [1] bracket numbered pattern (excluding 4-digit years like [2018])
     bracket_matches = list(re.finditer(r"(?:^|\n)\s*(\[\d{1,4}\])\s*", bib_text))
-    if len(bracket_matches) >= 2:
-        for i, match in enumerate(bracket_matches):
+    valid_bracket_matches = [
+        m for m in bracket_matches
+        if not (1900 <= int(m.group(1).strip("[]")) <= 2099)
+    ]
+    if len(valid_bracket_matches) >= 2:
+        for i, match in enumerate(valid_bracket_matches):
             key = match.group(1).strip()
             start_pos = match.end()
-            end_pos = bracket_matches[i + 1].start() if (i + 1 < len(bracket_matches)) else len(bib_text)
+            end_pos = valid_bracket_matches[i + 1].start() if (i + 1 < len(valid_bracket_matches)) else len(bib_text)
             entry_body = bib_text[start_pos:end_pos].strip()
             # Collapse internal newlines
             entry_body = re.sub(r"\s+", " ", entry_body)
@@ -98,29 +102,69 @@ def segment_bibliography_entries(bib_text: str) -> List[Tuple[str, str]]:
             entries.append((key, full_entry))
         return entries
 
-    # Check for "1. ", "2. " numbered pattern
+    # Check for "1. ", "2. " numbered pattern (excluding 4-digit years like 2018.)
     dot_matches = list(re.finditer(r"(?:^|\n)\s*(\d{1,4})\.\s+", bib_text))
-    if len(dot_matches) >= 2:
-        for i, match in enumerate(dot_matches):
+    valid_dot_matches = [
+        m for m in dot_matches
+        if not (1900 <= int(m.group(1).strip()) <= 2099)
+    ]
+    if len(valid_dot_matches) >= 2:
+        for i, match in enumerate(valid_dot_matches):
             num = match.group(1).strip()
             key = f"[{num}]"
             start_pos = match.end()
-            end_pos = dot_matches[i + 1].start() if (i + 1 < len(dot_matches)) else len(bib_text)
+            end_pos = valid_dot_matches[i + 1].start() if (i + 1 < len(valid_dot_matches)) else len(bib_text)
             entry_body = bib_text[start_pos:end_pos].strip()
             entry_body = re.sub(r"\s+", " ", entry_body)
             full_entry = f"[{num}] {entry_body}"
             entries.append((key, full_entry))
         return entries
 
-    # Author-year / unnumbered bibliography: split by double newlines or blank lines
+    # Author-year / unnumbered bibliography:
+    # Check if split by double newlines produces good entries
     raw_paras = re.split(r"\n{2,}", bib_text)
-    if len(raw_paras) >= 2:
+    if len(raw_paras) >= 3:
         for i, para in enumerate(raw_paras):
             cleaned_entry = re.sub(r"\s+", " ", para).strip()
             if len(cleaned_entry) > 15:
-                # Derive citation key if possible
                 key = f"ref_{i + 1}"
                 entries.append((key, cleaned_entry))
+        return entries
+
+    # Line-by-line author-year segmentation
+    ay_entries: List[str] = []
+    curr_lines: List[str] = []
+    for line in lines:
+        is_new_entry = False
+        if curr_lines:
+            prev_text = " ".join(curr_lines).strip()
+            prev_has_year = bool(re.search(r"\b(19\d\d|20[0-2]\d)[a-z]?\b", prev_text))
+            prev_terminal = prev_text.endswith((".", ")", '"', "'", "”")) or bool(re.search(r"\b(19\d\d|20[0-2]\d)[a-z]?\.?$", prev_text))
+            is_year_start = bool(re.match(r"^(?:19\d\d|20[0-2]\d)[a-z]?\.\s*", line))
+            author_start = bool(re.match(r"^[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-]+", line))
+            is_lower_or_digit = line[0].islower() or line[0].isdigit()
+            is_keyword = bool(re.match(r"^(?:in\s+|pages?\s+|arxiv\b|http|doi|vol\b|volume\b|no\.\s*|and\s+|et\s+al\b|proceedings\b|journal\b|conference\b)", line, re.IGNORECASE))
+            not_continuation = not (is_lower_or_digit or is_keyword)
+
+            if prev_has_year and prev_terminal and author_start and not is_year_start and not_continuation and len(prev_text) > 35:
+                is_new_entry = True
+        else:
+            if re.match(r"^[A-Z\u00C0-\u024F]", line):
+                is_new_entry = True
+
+        if is_new_entry and curr_lines:
+            ay_entries.append(" ".join(curr_lines).strip())
+            curr_lines = [line]
+        else:
+            curr_lines.append(line)
+
+    if curr_lines:
+        ay_entries.append(" ".join(curr_lines).strip())
+
+    if len(ay_entries) >= 2:
+        for i, e in enumerate(ay_entries):
+            key = f"ref_{i + 1}"
+            entries.append((key, e))
         return entries
 
     # Fallback: treat each line with substantial length as an entry
@@ -204,6 +248,11 @@ def parse_reference_metadata(citation_key: str, raw_citation: str) -> ExtractedR
         authors = authors[:250].strip()
     if title and len(title) > 300:
         title = title[:300].strip()
+
+    # For author-year references with artificial keys (ref_X), generate an author-year citation key
+    if (citation_key.startswith("ref_") or not citation_key) and authors and year:
+        surname = authors.split()[0].rstrip(",.")
+        citation_key = f"{surname} et al. [{year}]" if len(authors.split()) > 2 else f"{surname} [{year}]"
 
     return ExtractedReferenceItem(
         reference_id=ref_id,

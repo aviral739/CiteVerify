@@ -237,6 +237,29 @@ class VerificationOrchestrator:
                             matched_ref = resolved_ref_map[ck]
                             break
 
+                if not matched_ref:
+                    import re
+                    keys_to_search = ([c_dict.get("citation_key")] if c_dict.get("citation_key") else []) + (c_dict.get("all_citation_keys") or []) + [c_dict.get("claim_text", "")]
+                    for k_cand in keys_to_search:
+                        if not k_cand:
+                            continue
+                        y_m = re.search(r'\b(19\d\d|20[0-2]\d)\b', k_cand)
+                        auth_m = re.search(r'([A-Z][a-zA-Z\u00C0-\u024F\.\-]+)', k_cand)
+                        if y_m and auth_m:
+                            cand_yr = int(y_m.group(1))
+                            cand_surname = auth_m.group(1).rstrip(",.").lower()
+                            for ref in s4_out.resolved_references:
+                                ref_dict = ref.model_dump() if hasattr(ref, "model_dump") else dict(ref)
+                                r_yr = ref_dict.get("year") or ref_dict.get("resolved_year")
+                                r_authors = (ref_dict.get("authors") or ref_dict.get("resolved_authors") or "").lower()
+                                r_raw = (ref_dict.get("raw_citation") or "").lower()
+                                if r_yr == cand_yr and (cand_surname in r_authors or cand_surname in r_raw):
+                                    matched_ref = ref_dict
+                                    c_dict["reference_id"] = ref_dict.get("id") or ref_dict.get("reference_id")
+                                    break
+                        if matched_ref:
+                            break
+
                 if matched_ref:
                     if matched_ref.get("doi"):
                         c_dict["reference_doi"] = matched_ref["doi"]

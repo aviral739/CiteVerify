@@ -24,6 +24,11 @@ NARRATIVE_AUTHOR_YEAR = re.compile(
     r"\b([A-Z][a-zA-Z]+(?:\s+et\s+al\.?)?)\s+\(((?:19\d{2}|20[0-2]\d)[a-z]?)\)"
 )
 
+# Bracket author-year: Wan et al. [2013], Hinton et al. [2011], Kingma and Ba [2014]
+BRACKET_AUTHOR_YEAR = re.compile(
+    r"\b([A-Z][a-zA-Z\.\-]+(?:\s+(?:et\s+al\.?|and\s+[A-Z][a-zA-Z\.\-]+|&\s+[A-Z][a-zA-Z\.\-]+))?)\s*\[((?:19\d{2}|20[0-2]\d)[a-z]?)\]"
+)
+
 
 def expand_numeric_range(group_text: str) -> List[str]:
     """Expand numeric citation range string like '1-3, 5' into individual keys: ['1', '2', '3', '5']."""
@@ -49,22 +54,32 @@ def expand_numeric_range(group_text: str) -> List[str]:
 def extract_in_text_citations(text: str) -> List[InTextCitationMarker]:
     """Scan manuscript text and extract all in-text citation markers."""
     citations: List[InTextCitationMarker] = []
+    occupied_spans = set()
 
-    # 1. Numeric bracket citations [1], [1, 2], [1-4]
-    for match in NUMERIC_CITATION_PATTERN.finditer(text):
+    # 1. Bracket author-year: Wan et al. [2013]
+    for match in BRACKET_AUTHOR_YEAR.finditer(text):
+        span = match.span()
         raw = match.group(0)
-        inner = match.group(1)
-        expanded_nums = expand_numeric_range(inner)
+        author = match.group(1).strip()
+        year_str = match.group(2).strip()
+        year = int(re.sub(r"[a-z]", "", year_str)) if re.sub(r"[a-z]", "", year_str).isdigit() else None
+        if any(w in author.lower() for w in ["fig", "table", "eq", "section"]):
+            continue
         citation = InTextCitationMarker(
             raw_citation=raw,
-            style=CitationStyleEnum.NUMERIC,
-            keys=[f"[{num}]" for num in expanded_nums],
-            sentence=None,
+            style=CitationStyleEnum.AUTHOR_YEAR,
+            keys=[raw, f"{author} {year_str}", f"{author} [{year_str}]"],
+            author=author,
+            year=year,
         )
         citations.append(citation)
+        occupied_spans.add(span)
 
     # 2. Parenthetical author-year: (Smith et al., 2020)
     for match in PAREN_AUTHOR_YEAR.finditer(text):
+        span = match.span()
+        if any(s[0] <= span[0] < s[1] for s in occupied_spans):
+            continue
         raw = match.group(0)
         author = match.group(1).strip()
         year_str = match.group(2).strip()
@@ -82,9 +97,13 @@ def extract_in_text_citations(text: str) -> List[InTextCitationMarker]:
             year=year,
         )
         citations.append(citation)
+        occupied_spans.add(span)
 
     # 3. Narrative author-year: Smith et al. (2020)
     for match in NARRATIVE_AUTHOR_YEAR.finditer(text):
+        span = match.span()
+        if any(s[0] <= span[0] < s[1] for s in occupied_spans):
+            continue
         raw = match.group(0)
         author = match.group(1).strip()
         year_str = match.group(2).strip()
@@ -99,6 +118,23 @@ def extract_in_text_citations(text: str) -> List[InTextCitationMarker]:
             keys=[f"{author} {year_str}"],
             author=author,
             year=year,
+        )
+        citations.append(citation)
+        occupied_spans.add(span)
+
+    # 4. Numeric bracket citations [1], [1, 2], [1-4] (ignoring occupied spans)
+    for match in NUMERIC_CITATION_PATTERN.finditer(text):
+        span = match.span()
+        if any(s[0] <= span[0] < s[1] for s in occupied_spans):
+            continue
+        raw = match.group(0)
+        inner = match.group(1)
+        expanded_nums = expand_numeric_range(inner)
+        citation = InTextCitationMarker(
+            raw_citation=raw,
+            style=CitationStyleEnum.NUMERIC,
+            keys=[f"[{num}]" for num in expanded_nums],
+            sentence=None,
         )
         citations.append(citation)
 

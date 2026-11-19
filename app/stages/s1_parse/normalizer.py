@@ -37,7 +37,7 @@ def normalize_academic_text(text: str) -> str:
 
     # 5b. Ensure recognized academic headings have double newlines around them
     heading_pattern = re.compile(
-        r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s*)?(?:abstract|introduction|related\s+work|background|methodology|methods|model\s+architecture|experiments|results|discussion|conclusions?|references|acknowledgements?)\b",
+        r"^(?:(?:\d{1,2}(?:\.\d{1,2})*|[IVX]+)\.?\s*)?(?:abstract|introduction|related\s+work|background|methodology|methods|model\s+architecture|experiments|results|discussion|conclusions?|references|acknowledgements?)\b",
         re.IGNORECASE,
     )
     raw_lines = text.split("\n")
@@ -49,7 +49,7 @@ def normalize_academic_text(text: str) -> str:
             and len(s) < 80
             and (
                 heading_pattern.match(s)
-                or re.match(r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", s)
+                or re.match(r"^(?:(?:\d{1,2}(?:\.\d{1,2})*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", s)
             )
         )
         if is_heading:
@@ -74,10 +74,15 @@ def normalize_academic_text(text: str) -> str:
         # Preserve lines if any line in this paragraph looks like a section heading or reference item
         has_structural_line = any(
             heading_pattern.match(l)
-            or re.match(r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", l)
+            or re.match(r"^(?:(?:\d{1,2}(?:\.\d{1,2})*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", l)
             for l in raw_lines
         )
-        if has_structural_line:
+        # Preserve lines if paragraph consists of author-year bibliographic references
+        has_bib_entries = (
+            sum(1 for l in raw_lines if re.search(r"\b(19\d\d|20[0-2]\d)[a-z]?\b", l)) >= 2
+            and sum(1 for l in raw_lines if re.match(r"^[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-]+", l)) >= 2
+        )
+        if has_structural_line or has_bib_entries:
             cleaned_paragraphs.append("\n".join(re.sub(r"[ \t]+", " ", l) for l in raw_lines))
         else:
             cleaned_para = " ".join(raw_lines)

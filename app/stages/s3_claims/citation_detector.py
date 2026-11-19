@@ -28,6 +28,11 @@ _NARRATIVE_AUTHOR_YEAR_RE = re.compile(
     r'\b([A-Z][a-zA-Z\.\-]+(?:\s+et\s+al\.?)?)\s*\((19\d\d|20\d\d)[a-z]?\)'
 )
 
+# 4. Bracketed Author-Year: Wan et al. [2013], Hinton et al. [2011], (LeCun et al. [2004])
+_BRACKET_AUTHOR_YEAR_RE = re.compile(
+    r'\b([A-Z][a-zA-Z\.\-]+(?:\s+(?:et\s+al\.?|and\s+[A-Z][a-zA-Z\.\-]+|&\s+[A-Z][a-zA-Z\.\-]+))?)\s*\[((?:19\d\d|20[0-2]\d)[a-z]?)\]'
+)
+
 
 def expand_numeric_range(token: str) -> List[str]:
     """Expand numeric citation range like '1-4' or '1–3' into ['[1]', '[2]', '[3]', '[4]']."""
@@ -57,9 +62,26 @@ def detect_citations(sentence: str) -> List[CitationMatch]:
     matches: List[CitationMatch] = []
     occupied_spans: Set[Tuple[int, int]] = set()
 
-    # 1. Numeric Bracketed citations
+    # 1. Bracketed Author-Year citations: Wan et al. [2013], Hinton et al. [2011]
+    for m in _BRACKET_AUTHOR_YEAR_RE.finditer(sentence):
+        span = m.span()
+        raw = m.group(0)
+        author = m.group(1).strip()
+        year_str = m.group(2).strip()
+        norm_keys = [raw, f"{author} {year_str}", f"{author} [{year_str}]", f"({author}, {year_str})"]
+        matches.append(CitationMatch(
+            raw_match=raw,
+            normalized_keys=norm_keys,
+            start_pos=span[0],
+            end_pos=span[1],
+        ))
+        occupied_spans.add(span)
+
+    # 2. Numeric Bracketed citations: [1], [1, 2], [1-3]
     for m in _NUMERIC_BRACKET_RE.finditer(sentence):
         span = m.span()
+        if any(s[0] <= span[0] and span[1] <= s[1] for s in occupied_spans):
+            continue
         raw = m.group(0)
         norm_keys = expand_numeric_range(raw)
         matches.append(CitationMatch(
@@ -70,13 +92,12 @@ def detect_citations(sentence: str) -> List[CitationMatch]:
         ))
         occupied_spans.add(span)
 
-    # 2. Parenthetical Author-Year citations
+    # 3. Parenthetical Author-Year citations: (Smith, 2023), (Smith et al., 2023)
     for m in _AUTHOR_YEAR_PAREN_RE.finditer(sentence):
         span = m.span()
         if any(s[0] <= span[0] < s[1] for s in occupied_spans):
             continue
         raw = m.group(0)
-        # Split multiple citations in semicolon (e.g. "(Smith, 2020; Lee, 2021)")
         inner = raw.strip('()')
         norm_keys = [f"({item.strip()})" for item in inner.split(';') if item.strip()]
         matches.append(CitationMatch(
@@ -87,7 +108,7 @@ def detect_citations(sentence: str) -> List[CitationMatch]:
         ))
         occupied_spans.add(span)
 
-    # 3. Narrative Author-Year citations
+    # 4. Narrative Author-Year citations: Smith et al. (2023)
     for m in _NARRATIVE_AUTHOR_YEAR_RE.finditer(sentence):
         span = m.span()
         if any(s[0] <= span[0] < s[1] for s in occupied_spans):
@@ -119,19 +140,18 @@ def associate_references(
         return citations, None, []
 
     # Build reference lookup maps
-    # map by citation_key (e.g. "[1]", "(Smith, 2020)") and by author/number
     ref_lookup: Dict[str, str] = {}
     for ref in available_references:
         ref_id = ref.get("id") or ref.get("reference_id") or ""
         key = ref.get("citation_key") or ""
-        raw = ref.get("raw_citation") or ""
-
         if key:
             ref_lookup[key.strip().lower()] = ref_id
+            ref_lookup[key.strip().lower().replace("[", "").replace("]", "")] = ref_id
         # Also map bracketed number if key has number
         digits = re.findall(r'\d+', key)
         for d in digits:
-            ref_lookup[f"[{d}]"] = ref_id
+            if not (1900 <= int(d) <= 2099):
+                ref_lookup[f"[{d}]"] = ref_id
 
     primary_ref_id: Optional[str] = None
     all_ref_ids: List[str] = []
@@ -141,10 +161,34 @@ def associate_references(
             clean_k = k.strip().lower()
             if clean_k in ref_lookup:
                 matched_id = ref_lookup[clean_k]
-                cit.resolved_ref_id = matched_id
+                if not cit.resolved_ref_id:
+                    cit.resolved_ref_id = matched_id
                 if not primary_ref_id:
                     primary_ref_id = matched_id
                 if matched_id not in all_ref_ids:
                     all_ref_ids.append(matched_id)
+
+        # If not matched by exact key, try Author + Year matching
+        if not cit.resolved_ref_id:
+            # Extract year from citation
+            y_m = re.search(r'\b(19\d\d|20[0-2]\d)\b', cit.raw_match)
+            if y_m:
+                cit_year = int(y_m.group(1))
+                # Extract author surname
+                auth_m = re.search(r'([A-Z][a-zA-Z\u00C0-\u024F\.\-]+)', cit.raw_match)
+                if auth_m:
+                    cit_surname = auth_m.group(1).rstrip(",.").lower()
+                    for ref in available_references:
+                        ref_year = ref.get("year")
+                        ref_authors = (ref.get("authors") or "").lower()
+                        ref_raw = (ref.get("raw_citation") or "").lower()
+                        if ref_year == cit_year and (cit_surname in ref_authors or cit_surname in ref_raw):
+                            matched_id = ref.get("id") or ref.get("reference_id")
+                            cit.resolved_ref_id = matched_id
+                            if not primary_ref_id:
+                                primary_ref_id = matched_id
+                            if matched_id not in all_ref_ids:
+                                all_ref_ids.append(matched_id)
+                            break
 
     return citations, primary_ref_id, all_ref_ids

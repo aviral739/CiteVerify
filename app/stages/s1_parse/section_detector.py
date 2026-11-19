@@ -52,8 +52,8 @@ def is_likely_heading(line: str) -> bool:
     if classify_heading_text(line) != "other":
         return True
 
-    # Check numbered heading pattern
-    if re.match(r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s+)[A-Z][A-Za-z\s]{2,40}$", line):
+    # Check numbered heading pattern (1 or 2 digit section numbers, never 4-digit years)
+    if re.match(r"^(?:(?:\d{1,2}(?:\.\d{1,2})*|[IVX]+)\.?\s+)[A-Z][A-Za-z\s]{2,40}$", line):
         return True
 
     # Check markdown heading pattern
@@ -105,9 +105,27 @@ def segment_document_sections(text: str) -> Tuple[Dict[str, str], List[DocumentS
         )
         order += 1
 
+    in_references = False
+
     for line in lines:
         stripped = line.strip()
         if is_likely_heading(stripped):
+            cat = classify_heading_text(stripped)
+            # Once inside references, only recognize valid post-references sections
+            if in_references:
+                is_post_ref = (
+                    cat in ("appendix", "acknowledgements")
+                    or bool(re.match(r"^(?:(?:[A-Z0-9]+[\.\s]*)?(?:appendix|appendices|supplementary|author\s+contributions))\b", stripped, re.IGNORECASE))
+                )
+                if not is_post_ref:
+                    current_lines.append(line)
+                    continue
+                else:
+                    in_references = False
+
+            if cat == "references":
+                in_references = True
+
             # Commit previous section
             commit_section(current_heading, current_lines)
             current_heading = stripped
