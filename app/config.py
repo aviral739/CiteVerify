@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # External APIs
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash-lite"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     OPENALEX_API_KEY: Optional[str] = None
     CROSSREF_MAILTO: str = "citeverify@example.com"
 

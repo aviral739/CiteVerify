@@ -16,7 +16,7 @@ import app.models.tables  # noqa: F401 - ensure all tables are registered on Bas
 
 logger = logging.getLogger("citeverify.db.migration")
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # New columns to ensure on existing tables:
 # table_name -> list of (column_name, sql_type_and_default)
@@ -70,6 +70,7 @@ COLUMNS_TO_ENSURE: Dict[str, List[Tuple[str, str]]] = {
         ("ai_verdict", "VARCHAR(64)"),
         ("override_reason", "TEXT"),
         ("verification_method", "VARCHAR(64) DEFAULT 'gemini_assisted'"),
+        ("fallback_reason", "VARCHAR(64)"),
         ("warnings", "TEXT"),
     ],
     "reviews": [

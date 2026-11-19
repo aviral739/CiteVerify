@@ -80,6 +80,7 @@ class LLMClaimVerifier:
 
     def __init__(self, llm_client: Optional[BaseLLMClient] = None):
         self.llm = llm_client or get_llm_client()
+        self.last_failure_reason: Optional[str] = None
 
     async def verify_pair(
         self,
@@ -105,8 +106,10 @@ class LLMClaimVerifier:
         max_retries: int = 2,
     ) -> Optional[LLMVerificationAssessment]:
         """Perform structured LLM NLI reasoning on a claim-evidence pair."""
+        self.last_failure_reason = None
         if not evidence_text or not evidence_text.strip():
             logger.debug(f"Evidence text empty for claim '{claim_text[:50]}...'; skipping LLM call.")
+            self.last_failure_reason = "insufficient_evidence"
             return None
 
         # Build comprehensive grounded prompt
@@ -211,7 +214,8 @@ Produce your structured verification assessment.
                         res["contradiction_type"] = None
                     assessment = LLMVerificationAssessment.model_validate(res)
                     assessment.invocation_status = "success"
-                    assessment.model_name = res.get("_model", "gemini-2.5-flash-lite")
+                    assessment.model_name = res.get("_model", getattr(self.llm, "model", "gemini-3.5-flash-lite"))
+                    self.last_failure_reason = None
                     logger.info(
                         f"Gemini verification succeeded for citation '{citation_key}': "
                         f"verdict='{assessment.verdict}' (strength={assessment.verdict_strength})"
@@ -219,19 +223,36 @@ Produce your structured verification assessment.
                     return assessment
                 else:
                     logger.warning(f"Gemini returned invalid verdict string: '{raw_verdict}'")
+                    self.last_failure_reason = "schema_validation_failed"
                     return None
-            elif status in ("missing_config", "timeout", "provider_failure", "invalid_response"):
+            else:
+                failure_reason = (
+                    res.get("fallback_reason")
+                    or res.get("_status")
+                    or "provider_error"
+                ) if isinstance(res, dict) else "provider_error"
+                # Normalize status strings
+                if failure_reason in ("missing_config", "missing_api_key"):
+                    self.last_failure_reason = "missing_api_key"
+                elif failure_reason in ("provider_failure", "provider_error"):
+                    self.last_failure_reason = "provider_error"
+                elif failure_reason in (
+                    "quota_exceeded", "rate_limited", "timeout", "invalid_model",
+                    "invalid_response", "schema_validation_failed", "insufficient_evidence",
+                ):
+                    self.last_failure_reason = failure_reason
+                else:
+                    self.last_failure_reason = "provider_error"
+
                 logger.warning(
-                    f"Gemini verification unavailable ({status}: {res.get('error')}); "
+                    f"Gemini verification unavailable (status={status}, reason={self.last_failure_reason}: {res.get('error') if isinstance(res, dict) else res}); "
                     "activating deterministic rule-based fallback."
                 )
-                return None
-            else:
-                logger.debug(f"Gemini response unhandled status: {status}; falling back.")
                 return None
 
         except Exception as exc:
             logger.warning(f"Exception during LLM verification call: {exc}; falling back to deterministic rules.")
+            self.last_failure_reason = "provider_error"
             return None
 
 

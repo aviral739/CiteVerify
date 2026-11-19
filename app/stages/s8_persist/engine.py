@@ -491,6 +491,7 @@ class PersistenceEngine:
                                 override_reason=r_dict.get("override_reason"),
                                 model_name=model_name,
                                 verification_method=r_dict.get("verification_method", "llm_nli"),
+                                fallback_reason=r_dict.get("fallback_reason"),
                                 warnings=r_dict.get("warnings"),
                             )
                             counts["results"] += 1

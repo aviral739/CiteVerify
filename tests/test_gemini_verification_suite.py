@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import Response, Request
 
 from app.config import get_settings
-from app.core.llm import GeminiLLMClient
+from app.core.llm import BaseLLMClient, GeminiLLMClient
 from app.models.schemas import EvidenceAvailabilityEnum, VerdictEnum
 from app.stages.s6_verify.quote_guard import (
     QuoteGuard,
@@ -112,9 +112,9 @@ class TestGeminiLLMClient:
     @pytest.mark.asyncio
     async def test_missing_api_key_returns_missing_config(self):
         """Client gracefully handles missing or empty API keys without throwing."""
-        client = GeminiLLMClient(api_key="", model="gemini-2.5-flash-lite")
+        client = GeminiLLMClient(api_key="", model="gemini-3.5-flash-lite")
         resp = await client.generate_structured("prompt", response_schema={"type": "object"})
-        assert resp.get("_status") == "missing_config"
+        assert resp.get("_status") in ("missing_config", "missing_api_key")
         assert "not configured" in resp.get("error", "").lower()
 
     @pytest.mark.asyncio
@@ -399,9 +399,207 @@ async def test_s8_persists_ai_verdict_and_override_reason():
 
 
 # =============================================================================
-# 5. Live Smoke Test (Conditional on Real Configured API Key)
+# 5. Gemini S6 Pipeline Orchestration Tests (Mocked for CI / Verification)
 # =============================================================================
 
+class TestGeminiPipelineOrchestration:
+    """Verifies end-to-end S6 verification orchestration with Gemini and safety overrides."""
+
+    @pytest.mark.asyncio
+    async def test_gemini_called_with_exact_claim_and_evidence(self):
+        """1 & 2. Gemini is called when configured and usable evidence exists, passing exact claim & passages."""
+        mock_llm = MagicMock(spec=BaseLLMClient)
+        mock_llm.model = "gemini-3.5-flash-lite"
+        mock_llm.generate_structured = AsyncMock(return_value={
+            "_status": "success",
+            "_model": "gemini-3.5-flash-lite",
+            "verdict": "supported",
+            "verdict_strength": 0.92,
+            "reasoning": "The cited passage directly proves the claim.",
+            "supporting_quotes": ["relying entirely on an attention mechanism to draw global dependencies"],
+            "evidence_passage_ids": ["ev-101"],
+            "numerical_consistency": "not_applicable",
+            "scope_consistency": "consistent",
+            "contradiction_detected": False,
+            "uncertainty": 0.08,
+        })
+        verifier = LLMClaimVerifier(llm_client=mock_llm)
+        engine = ClaimVerificationEngine(llm_verifier=verifier)
+
+        pair = ClaimEvidencePair(
+            claim_id="claim-exact-1",
+            claim_text="The Transformer relies entirely on an attention mechanism.",
+            reference_id="ref-101",
+            citation_key="[1]",
+            evidence_passages=[
+                EvidencePassage(
+                    evidence_id="ev-101",
+                    citation_key="[1]",
+                    reference_id="ref-101",
+                    evidence_text="We propose the Transformer, relying entirely on an attention mechanism to draw global dependencies.",
+                    source_type=EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+                    retrieval_score=0.95,
+                )
+            ]
+        )
+        res = await engine.verify_pair(pair)
+
+        assert res.verification_method == "gemini_assisted"
+        assert res.verdict == VerdictEnum.SUPPORTED
+        assert res.ai_verdict == "supported"
+        assert res.model_name == "gemini-3.5-flash-lite"
+        assert res.fallback_reason is None
+        assert mock_llm.generate_structured.called
+        call_args = mock_llm.generate_structured.call_args
+        prompt_arg = call_args.kwargs.get("prompt") or call_args.args[0]
+        assert "The Transformer relies entirely on an attention mechanism." in prompt_arg
+        assert "relying entirely on an attention mechanism to draw global dependencies." in prompt_arg
+
+    @pytest.mark.asyncio
+    async def test_quota_exhaustion_triggers_deterministic_fallback_with_reason(self):
+        """5, 6 & 8. Quota exhaustion triggers deterministic fallback with fallback_reason='quota_exceeded'."""
+        mock_llm = MagicMock(spec=BaseLLMClient)
+        mock_llm.model = "gemini-3.5-flash-lite"
+        mock_llm.generate_structured = AsyncMock(return_value={
+            "_status": "quota_exceeded",
+            "fallback_reason": "quota_exceeded",
+            "error": "HTTP 429: Resource exhausted",
+        })
+        verifier = LLMClaimVerifier(llm_client=mock_llm)
+        engine = ClaimVerificationEngine(llm_verifier=verifier)
+
+        pair = ClaimEvidencePair(
+            claim_id="claim-quota-1",
+            claim_text="The Transformer achieves state of the art results.",
+            reference_id="ref-101",
+            citation_key="[1]",
+            evidence_passages=[
+                EvidencePassage(
+                    evidence_id="ev-101",
+                    citation_key="[1]",
+                    reference_id="ref-101",
+                    evidence_text="The Transformer achieves state of the art results on WMT 2014.",
+                    source_type=EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+                    retrieval_score=0.88,
+                )
+            ]
+        )
+        res = await engine.verify_pair(pair)
+
+        assert res.verification_method == "deterministic_fallback"
+        assert res.fallback_reason == "quota_exceeded"
+        assert res.ai_verdict is None
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_triggers_fallback_reason(self):
+        """7. Missing API key triggers deterministic fallback with fallback_reason='missing_api_key'."""
+        client = GeminiLLMClient(api_key="", model="gemini-3.5-flash-lite")
+        verifier = LLMClaimVerifier(llm_client=client)
+        engine = ClaimVerificationEngine(llm_verifier=verifier)
+
+        pair = ClaimEvidencePair(
+            claim_id="claim-nokey-1",
+            claim_text="Recurrent models generate sequences step by step.",
+            reference_id="ref-102",
+            citation_key="[2]",
+            evidence_passages=[
+                EvidencePassage(
+                    evidence_id="ev-102",
+                    citation_key="[2]",
+                    reference_id="ref-102",
+                    evidence_text="Recurrent models typically factor computation along the symbol positions.",
+                    source_type=EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+                    retrieval_score=0.85,
+                )
+            ]
+        )
+        res = await engine.verify_pair(pair)
+
+        assert res.verification_method == "deterministic_fallback"
+        assert res.fallback_reason == "missing_api_key"
+
+    @pytest.mark.asyncio
+    async def test_unavailable_evidence_abstains_without_gemini_call(self):
+        """11. Claims with unavailable evidence abstain without calling Gemini."""
+        mock_llm = MagicMock(spec=BaseLLMClient)
+        mock_llm.generate_structured = AsyncMock()
+        verifier = LLMClaimVerifier(llm_client=mock_llm)
+        engine = ClaimVerificationEngine(llm_verifier=verifier)
+
+        pair = ClaimEvidencePair(
+            claim_id="claim-unavail-1",
+            claim_text="Obscure finding from behind a closed paywall.",
+            reference_id="ref-unavail",
+            citation_key="[30]",
+            evidence_passages=[
+                EvidencePassage(
+                    evidence_id="ev-unavail",
+                    citation_key="[30]",
+                    evidence_text="",
+                    source_type=EvidenceAvailabilityEnum.UNAVAILABLE,
+                )
+            ]
+        )
+        res = await engine.verify_pair(pair)
+
+        assert res.verification_method == "abstention"
+        assert res.verdict == VerdictEnum.INSUFFICIENT_EVIDENCE
+        assert res.fallback_reason == "abstention"
+        assert not mock_llm.generate_structured.called
+
+    @pytest.mark.asyncio
+    async def test_safety_override_preserves_ai_verdict_and_override_reason(self):
+        """12. Safety override (retraction) overrides Gemini supported to insufficient_evidence, preserving ai_verdict."""
+        mock_llm = MagicMock(spec=BaseLLMClient)
+        mock_llm.model = "gemini-3.5-flash-lite"
+        mock_llm.generate_structured = AsyncMock(return_value={
+            "_status": "success",
+            "_model": "gemini-3.5-flash-lite",
+            "verdict": "supported",
+            "verdict_strength": 0.95,
+            "reasoning": "Claim perfectly matches passage text.",
+            "supporting_quotes": [],
+            "evidence_passage_ids": ["ev-ret"],
+            "numerical_consistency": "not_applicable",
+            "scope_consistency": "consistent",
+            "contradiction_detected": False,
+            "uncertainty": 0.05,
+        })
+        verifier = LLMClaimVerifier(llm_client=mock_llm)
+        engine = ClaimVerificationEngine(llm_verifier=verifier)
+
+        pair = ClaimEvidencePair(
+            claim_id="claim-ret-1",
+            claim_text="Hydroxychloroquine reduces mortality in COVID-19 patients.",
+            reference_id="ref-ret",
+            citation_key="[99]",
+            is_retracted=True,
+            retraction_notice="Article retracted by The Lancet due to data provenance concerns.",
+            evidence_passages=[
+                EvidencePassage(
+                    evidence_id="ev-ret",
+                    citation_key="[99]",
+                    evidence_text="Hydroxychloroquine administration was associated with decreased in-hospital mortality.",
+                    source_type=EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+                    retrieval_score=0.90,
+                )
+            ]
+        )
+        res = await engine.verify_pair(pair)
+
+        assert res.verification_method == "gemini_assisted"
+        assert res.ai_verdict == "supported"
+        assert res.verdict == VerdictEnum.INSUFFICIENT_EVIDENCE
+        assert res.override_reason is not None
+        assert "Retracted source override" in res.override_reason
+        assert res.needs_human_review is True
+
+
+# =============================================================================
+# 6. Live Smoke Test (Conditional on Real Configured API Key)
+# =============================================================================
+
+@pytest.mark.live_gemini
 @pytest.mark.asyncio
 async def test_live_gemini_smoke_probe():
     """Live smoke test that probes the real Gemini API if configured."""

@@ -860,6 +860,22 @@ export const ResultsPage: React.FC = () => {
                             </p>
 
                             <div className="flex flex-wrap gap-1.5 mb-space-sm">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 font-label-sm text-xs rounded-DEFAULT ${
+                                res.verification_method === 'deterministic_fallback'
+                                  ? 'bg-amber-500/15 text-amber-900 border border-amber-500/20'
+                                  : res.verification_method === 'abstention'
+                                  ? 'bg-stone-500/15 text-stone-800 border border-stone-500/20'
+                                  : 'bg-primary-container/20 text-primary border border-primary/20'
+                              }`}>
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {res.verification_method === 'deterministic_fallback' ? 'rule' : res.verification_method === 'abstention' ? 'block' : 'neurology'}
+                                </span>
+                                {res.verification_method === 'deterministic_fallback'
+                                  ? 'Fallback'
+                                  : res.verification_method === 'abstention'
+                                  ? 'Abstained'
+                                  : 'Gemini'}
+                              </span>
                               {getEvidenceScopeBadge(res.evidence_completeness)}
                               {res.quote_verified && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/15 text-emerald-800 font-label-sm text-xs rounded-DEFAULT">
@@ -1065,15 +1081,25 @@ export const ResultsPage: React.FC = () => {
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold ${
                               selectedResult.verification_method === 'deterministic_fallback'
                                 ? 'bg-amber-500/20 text-amber-900 border border-amber-500/30'
+                                : selectedResult.verification_method === 'abstention'
+                                ? 'bg-stone-500/20 text-stone-800 border border-stone-500/30'
                                 : 'bg-primary-container/30 text-primary border border-primary/20'
                             }`}>
                               <span className="material-symbols-outlined text-[13px]">
-                                {selectedResult.verification_method === 'deterministic_fallback' ? 'rule' : 'neurology'}
+                                {selectedResult.verification_method === 'deterministic_fallback' ? 'rule' : selectedResult.verification_method === 'abstention' ? 'block' : 'neurology'}
                               </span>
                               {selectedResult.verification_method === 'deterministic_fallback'
                                 ? 'Deterministic Fallback'
+                                : selectedResult.verification_method === 'abstention'
+                                ? 'Abstained'
                                 : 'Gemini-Assisted'}
                             </span>
+                            {selectedResult.fallback_reason && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-900 border border-amber-500/20">
+                                <span className="material-symbols-outlined text-[13px]">info</span>
+                                Reason: {selectedResult.fallback_reason.replace(/_/g, ' ')}
+                              </span>
+                            )}
                             {selectedResult.quote_verified && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/15 text-emerald-800 border border-emerald-500/20">
                                 <span className="material-symbols-outlined text-[13px]">format_quote</span>
@@ -1084,7 +1110,7 @@ export const ResultsPage: React.FC = () => {
                           <div className="flex items-center gap-2">
                             {getVerdictBadge(selectedResult.verdict)}
                             <span className="font-code-sm text-xs text-on-surface-variant">
-                              Model: {selectedResult.model_name || 'gemini-2.5-flash-lite'}
+                              Model: {selectedResult.model_name || 'gemini-3.5-flash-lite'}
                             </span>
                           </div>
                         </div>

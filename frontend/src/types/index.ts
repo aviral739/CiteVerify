@@ -223,6 +223,7 @@ export interface ResultResponse {
 
   // Provisional S6 verification dimensions
   verification_method?: string | null;
+  fallback_reason?: string | null;
   ai_verdict?: string | null;
   override_reason?: string | null;
   quote_verified?: boolean | null;

@@ -74,13 +74,14 @@ class GeminiLLMClient(BaseLLMClient):
         self.api_key = settings.GEMINI_API_KEY if api_key is None else api_key
         raw_model = model or settings.GEMINI_MODEL
         # Normalize model string (strip 'models/' prefix if present)
-        self.model = raw_model.replace("models/", "") if raw_model else "gemini-2.5-flash-lite"
+        self.model = raw_model.replace("models/", "") if raw_model else "gemini-3.5-flash-lite"
         self.timeout = timeout_seconds
         self.max_retries = max_retries
 
         # Candidate fallback models in case primary model is unavailable or rate-limited
+        # Verified valid official models with active availability:
         self.candidate_models = [self.model]
-        for fallback in ("gemini-2.5-flash-lite", "gemini-3.8-flash"):
+        for fallback in ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"):
             if fallback not in self.candidate_models:
                 self.candidate_models.append(fallback)
 
@@ -144,9 +145,10 @@ class GeminiLLMClient(BaseLLMClient):
     ) -> Dict[str, Any]:
         """Call Gemini API with structured JSON output schema."""
         if not self.is_configured():
-            logger.info("Gemini API key not configured; structured generation returning missing_config.")
+            logger.info("Gemini API key not configured; structured generation returning missing_api_key.")
             return {
-                "_status": "missing_config",
+                "_status": "missing_api_key",
+                "fallback_reason": "missing_api_key",
                 "error": "Gemini API key not configured",
                 "model": self.model,
             }
@@ -185,13 +187,15 @@ class GeminiLLMClient(BaseLLMClient):
                 logger.warning(f"Gemini returned valid JSON but not a dictionary: {type(parsed)}")
                 return {
                     "_status": "invalid_response",
+                    "fallback_reason": "invalid_response",
                     "error": "Model response was not a JSON object",
                     "raw_text": raw_text[:300],
                 }
         except json.JSONDecodeError as exc:
             logger.warning(f"Failed to decode Gemini JSON response: {exc}")
             return {
-                "_status": "invalid_response",
+                "_status": "schema_validation_failed",
+                "fallback_reason": "schema_validation_failed",
                 "error": f"JSON parse error: {exc}",
                 "raw_text": raw_text[:300],
             }
@@ -277,10 +281,41 @@ class GeminiLLMClient(BaseLLMClient):
                         continue
                     break
 
-        if "Timeout" in last_error:
-            return {"_status": "timeout", "error": last_error, "model": self.model}
+        if "Timeout" in last_error or (last_status_code and last_status_code == 504):
+            return {
+                "_status": "timeout",
+                "fallback_reason": "timeout",
+                "error": last_error,
+                "status_code": last_status_code,
+                "model": self.model,
+            }
+
+        if last_status_code == 429:
+            err_lower = last_error.lower()
+            if "quota" in err_lower or "limit" in err_lower:
+                status_code_name = "quota_exceeded"
+            else:
+                status_code_name = "rate_limited"
+            return {
+                "_status": status_code_name,
+                "fallback_reason": status_code_name,
+                "error": last_error,
+                "status_code": 429,
+                "model": self.model,
+            }
+
+        if last_status_code == 404:
+            return {
+                "_status": "invalid_model",
+                "fallback_reason": "invalid_model",
+                "error": last_error,
+                "status_code": 404,
+                "model": self.model,
+            }
+
         return {
-            "_status": "provider_failure",
+            "_status": "provider_error",
+            "fallback_reason": "provider_error",
             "error": last_error,
             "status_code": last_status_code,
             "model": self.model,

@@ -77,6 +77,7 @@ class ClaimVerificationEngine:
                 contradiction_type="retracted_source" if is_ret else None,
                 needs_human_review=is_ret,
                 verification_method="abstention",
+                fallback_reason="abstention",
                 warnings=warnings,
             )
 
@@ -109,6 +110,7 @@ class ClaimVerificationEngine:
                 contradiction_type="retracted_source" if is_ret else None,
                 needs_human_review=is_ret,
                 verification_method="abstention",
+                fallback_reason="abstention",
                 warnings=warnings,
             )
 
@@ -239,6 +241,7 @@ class ClaimVerificationEngine:
         ai_verdict: Optional[VerdictEnum] = None
         override_reason: Optional[str] = None
         supporting_quotes: List[str] = []
+        fallback_reason: Optional[str] = None
 
         if llm_assessment:
             raw_verdict = llm_assessment.verdict.lower().strip()
@@ -248,6 +251,7 @@ class ClaimVerificationEngine:
             explanation = llm_assessment.reasoning
             contradiction_type = llm_assessment.contradiction_type
             verification_method = "gemini_assisted"
+            fallback_reason = None
             model_name = llm_assessment.model_name
             supporting_quotes = llm_assessment.supporting_quotes or []
 
@@ -261,7 +265,8 @@ class ClaimVerificationEngine:
         else:
             # Deterministic Rule-Based Fallback
             verification_method = "deterministic_fallback"
-            model_name = getattr(self.llm_verifier.llm, "model", "gemini-2.5-flash-lite")
+            fallback_reason = getattr(self.llm_verifier, "last_failure_reason", None) or "provider_error"
+            model_name = getattr(self.llm_verifier.llm, "model", "gemini-3.5-flash-lite")
 
             # Validate quotes against manuscript text
             q_res = verify_quotation(None, valid_passages, pair.claim_text)
@@ -421,6 +426,7 @@ class ClaimVerificationEngine:
             supporting_quotes=supporting_quotes,
             model_name=model_name,
             verification_method=verification_method,
+            fallback_reason=fallback_reason,
             warnings=warnings,
         )
 

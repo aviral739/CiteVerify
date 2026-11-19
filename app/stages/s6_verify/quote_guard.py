@@ -115,6 +115,34 @@ def verify_quotation(
             if span not in candidates_to_test:
                 candidates_to_test.append(span.strip())
 
+        # If no explicit quotes, extract substantive distinctive contiguous phrases from claim
+        # that appear verbatim in any of the evidence passages
+        if not candidates_to_test:
+            passage_texts = [
+                normalize_quote_text(
+                    getattr(p, "evidence_text", None)
+                    or getattr(p, "text", None)
+                    or (p.get("evidence_text") if isinstance(p, dict) else "")
+                    or ""
+                )
+                for p in evidence_passages
+            ]
+            c_words = claim_text.split()
+            found = False
+            for w in range(len(c_words), 3, -1):
+                for i in range(len(c_words) - w + 1):
+                    phrase = " ".join(c_words[i : i + w]).strip(" ,;.!?:'\"()[]{}")
+                    if len(phrase) >= 20:
+                        norm_p = normalize_quote_text(phrase)
+                        if any(norm_p in pt for pt in passage_texts):
+                            is_dist, _ = is_distinctive_quotation(phrase)
+                            if is_dist:
+                                candidates_to_test.append(phrase)
+                                found = True
+                                break
+                if found:
+                    break
+
     if not candidates_to_test:
         return QuoteGuardResult(
             is_verified=False,

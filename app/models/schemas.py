@@ -198,6 +198,7 @@ class ResultResponse(BaseModel):
 
     # Verification dimensions
     verification_method: Optional[str] = "gemini_assisted"
+    fallback_reason: Optional[str] = None
     ai_verdict: Optional[str] = None
     override_reason: Optional[str] = None
     quote_verified: Optional[bool] = False

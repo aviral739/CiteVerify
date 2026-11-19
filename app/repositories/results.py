@@ -79,6 +79,7 @@ class ResultRepository(BaseRepository[Result]):
         override_reason: Optional[str] = None,
         model_name: Optional[str] = None,
         verification_method: str = "llm_nli",
+        fallback_reason: Optional[str] = None,
         warnings: Optional[List[str]] = None,
     ) -> Result:
         """Create and stage a single Result entity."""
@@ -106,6 +107,7 @@ class ResultRepository(BaseRepository[Result]):
             override_reason=override_reason,
             model_name=model_name,
             verification_method=verification_method,
+            fallback_reason=fallback_reason,
             warnings=json.dumps(warnings) if warnings is not None else None,
         )
         await self.add(res)

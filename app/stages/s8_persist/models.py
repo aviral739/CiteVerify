@@ -164,6 +164,7 @@ class S8PersistInput(BaseModel):
                             ai_verdict=res.get("ai_verdict"),
                             override_reason=res.get("override_reason"),
                             verification_method=res.get("verification_method", "gemini_assisted"),
+                            fallback_reason=res.get("fallback_reason"),
                         )
                     )
 

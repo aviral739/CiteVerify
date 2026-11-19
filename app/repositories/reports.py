@@ -221,6 +221,7 @@ class DocumentReportRepository:
                     reference=ref_resp,
                     evidence_quote=evidence_quote,
                     verification_method=getattr(r, "verification_method", "gemini_assisted"),
+                    fallback_reason=getattr(r, "fallback_reason", None),
                     ai_verdict=getattr(r, "ai_verdict", None),
                     override_reason=getattr(r, "override_reason", None),
                     quote_verified=bool(getattr(r, "quote_verified", False)),

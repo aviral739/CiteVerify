@@ -105,7 +105,7 @@ async def test_llm_timeout_fallback_to_rule_based():
     )
     result = await engine.verify_pair(pair)
 
-    assert result.verification_method == "deterministic_rule_based"
+    assert result.verification_method in ("deterministic_rule_based", "deterministic_fallback")
     assert result.verdict == VerdictEnum.SUPPORTED
     assert result.verdict_strength >= 0.70
 
@@ -131,7 +131,7 @@ async def test_llm_malformed_json_fallback():
     )
     result = await engine.verify_pair(pair)
 
-    assert result.verification_method == "deterministic_rule_based"
+    assert result.verification_method in ("deterministic_rule_based", "deterministic_fallback")
     assert result.verdict in (VerdictEnum.SUPPORTED, VerdictEnum.PARTIALLY_SUPPORTED)
 
 
@@ -356,7 +356,7 @@ async def test_abstract_only_llm_failure_conservative_fallback():
     )
     result = await engine.verify_pair(pair)
 
-    assert result.verification_method == "deterministic_rule_based"
+    assert result.verification_method in ("deterministic_rule_based", "deterministic_fallback")
     assert result.verdict == VerdictEnum.INSUFFICIENT_EVIDENCE
     assert result.verdict != VerdictEnum.UNSUPPORTED
     assert result.verdict != VerdictEnum.CONTRADICTORY

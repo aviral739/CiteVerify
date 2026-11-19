@@ -89,8 +89,9 @@ class VerificationResultItem(BaseModel):
     supporting_quotes: List[str] = Field(default_factory=list)
 
     # Provenance
-    model_name: str = "gemini-2.5-flash-lite"
+    model_name: str = "gemini-3.5-flash-lite"
     verification_method: str = "gemini_assisted"   # gemini_assisted, deterministic_fallback, abstention
+    fallback_reason: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
 
 

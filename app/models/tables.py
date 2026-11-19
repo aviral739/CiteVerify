@@ -243,6 +243,7 @@ class Result(Base):
 
     model_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     verification_method: Mapped[str] = mapped_column(String(64), default="llm_nli")
+    fallback_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     warnings: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON serialized list
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
