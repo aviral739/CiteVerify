@@ -1,0 +1,60 @@
+# CiteVerify — .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+ENV/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment and Secrets
+.env
+*.local.env
+
+# Database & SQLite files
+*.sqlite
+*.sqlite3
+*.db
+
+# Uploads & Runtime Artifacts
+storage/uploads/*
+storage/extracted/*
+storage/reports/*
+!storage/uploads/.gitkeep
+!storage/extracted/.gitkeep
+!storage/reports/.gitkeep
+
+# IDEs & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
