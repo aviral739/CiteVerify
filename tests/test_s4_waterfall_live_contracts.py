@@ -20,38 +20,32 @@ def test_production_scholarly_client_base_providers():
 
 
 def test_production_scholarly_client_europepmc_status():
-    """Check whether Ayushnath's Europe PMC client methods have landed in ScholarlyAPIClient."""
-    has_doi = hasattr(scholarly_client, "resolve_europepmc_doi")
-    has_pmcid = hasattr(scholarly_client, "resolve_europepmc_pmcid")
-
-    if not (has_doi and has_pmcid):
-        pytest.skip(
-            "Awaiting Ayushnath integration: Europe PMC DOI and PMCID client methods "
-            "('resolve_europepmc_doi', 'resolve_europepmc_pmcid') pending in app.stages.s4_resolve.scholarly_clients."
-        )
+    """Verify that Europe PMC client methods have landed in ScholarlyAPIClient and EuropePMCClient."""
+    from app.stages.s4_resolve.europe_pmc import europe_pmc_client
+    assert hasattr(europe_pmc_client, "get_by_doi")
+    assert hasattr(europe_pmc_client, "get_by_pmcid")
+    assert hasattr(scholarly_client, "resolve_europepmc_doi")
+    assert hasattr(scholarly_client, "resolve_europepmc_pmcid")
 
 
 def test_production_sqlite_persistent_cache_status():
-    """Check whether Ayushnath's SQLite persistent cache has replaced in-memory _RESOLUTION_CACHE."""
+    """Verify that SQLite persistent cache is present and replaces in-memory _RESOLUTION_CACHE."""
     from app.stages.s4_resolve import scholarly_clients
+    from app.stages.s4_resolve.cache import PersistentSQLiteCache, s4_cache
 
-    # Check if a persistent SQLite cache object or class exists
     has_sqlite_cache = (
         hasattr(scholarly_clients, "SQLiteResolutionCache")
         or hasattr(scholarly_clients, "sqlite_cache")
         or hasattr(scholarly_client, "cache_db")
+        or hasattr(scholarly_clients, "PersistentSQLiteCache")
     )
-
-    if not has_sqlite_cache:
-        pytest.skip(
-            "Awaiting Ayushnath integration: SQLite persistent cache "
-            "pending in app.stages.s4_resolve (currently using in-memory _RESOLUTION_CACHE dict)."
-        )
+    assert has_sqlite_cache
+    assert scholarly_client.cache is not None
 
 
 @pytest.mark.asyncio
 async def test_production_resolver_doi_title_mismatch_status():
-    """Check whether Aviral's DOI-title mismatch detection has landed in ReferenceResolver."""
+    """Verify that DOI-title mismatch detection is active in ReferenceResolver."""
     from unittest.mock import AsyncMock
 
     mock_client = AsyncMock(spec=ScholarlyAPIClient)
@@ -80,19 +74,16 @@ async def test_production_resolver_doi_title_mismatch_status():
     has_mismatch_flag = (
         any("mismatch" in w.lower() for w in resolved.warnings)
         or getattr(resolved, "is_doi_title_mismatch", False)
+        or getattr(resolved, "doi_title_mismatch", False)
         or resolved.status.value == "ambiguous"
     )
-
-    if not has_mismatch_flag:
-        pytest.skip(
-            "Awaiting Aviral integration: DOI-title mismatch detection "
-            "pending in app.stages.s4_resolve.resolver.ReferenceResolver."
-        )
+    assert has_mismatch_flag
+    assert resolved.doi_title_mismatch is True
 
 
 @pytest.mark.asyncio
 async def test_production_s5_source_text_consumption_status():
-    """Check whether Aviral's S4->S5 contract (consuming pre-loaded source_text without PDF download) has landed."""
+    """Verify that S5 directly consumes pre-loaded source_text without PDF download."""
     download_attempted = False
 
     class ProbeLoader(evidence_retrieval_engine.loader.__class__):
@@ -114,8 +105,5 @@ async def test_production_s5_source_text_consumption_status():
     passages, stype, _ = await engine._load_reference_passages(ref_with_text)
 
     # If S5 consumed source_text directly, it should not have attempted to download the PDF
-    if download_attempted:
-        pytest.skip(
-            "Awaiting Aviral integration: S5 direct consumption of pre-loaded Europe PMC source_text "
-            "pending in app.stages.s5_evidence.retriever.EvidenceRetrievalEngine."
-        )
+    assert not download_attempted
+    assert len(passages) >= 1

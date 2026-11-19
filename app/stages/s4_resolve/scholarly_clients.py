@@ -11,6 +11,10 @@ from app.stages.s4_resolve.cache import PersistentSQLiteCache, s4_cache
 
 logger = logging.getLogger("citeverify.stages.s4_resolve.clients")
 
+# Persistent cache aliases for backward compatibility and test contracts
+sqlite_cache = s4_cache
+SQLiteResolutionCache = PersistentSQLiteCache
+
 # In-memory resolution cache (maintained for backward-compatibility with tests)
 _RESOLUTION_CACHE: Dict[str, Dict[str, Any]] = {}
 
@@ -30,6 +34,7 @@ class ScholarlyAPIClient:
         max_retries: int = 2,
     ):
         self.cache = cache or s4_cache
+        self.cache_db = getattr(self.cache, "db_path", None)
         self.timeout = timeout_seconds
         self.max_retries = max_retries
 
@@ -401,6 +406,28 @@ class ScholarlyAPIClient:
         _RESOLUTION_CACHE[cache_key] = result
         await self.cache.set("semanticscholar", f"doi:{norm}", result)
         return result
+
+    # ---------------- 4. Europe PMC Delegation ----------------
+
+    async def resolve_europepmc_doi(self, doi: str, retrieve_full_text: bool = True) -> Optional[Dict[str, Any]]:
+        """Query Europe PMC by DOI with persistent SQLite caching."""
+        try:
+            from app.stages.s4_resolve.europe_pmc import europe_pmc_client
+            res = await europe_pmc_client.get_by_doi(doi, retrieve_full_text=retrieve_full_text)
+            return res.to_dict() if res else None
+        except Exception as exc:
+            logger.warning(f"Error querying Europe PMC for DOI '{doi}': {exc}")
+            return None
+
+    async def resolve_europepmc_pmcid(self, pmcid: str, retrieve_full_text: bool = True) -> Optional[Dict[str, Any]]:
+        """Query Europe PMC by PMCID with persistent SQLite caching."""
+        try:
+            from app.stages.s4_resolve.europe_pmc import europe_pmc_client
+            res = await europe_pmc_client.get_by_pmcid(pmcid, retrieve_full_text=retrieve_full_text)
+            return res.to_dict() if res else None
+        except Exception as exc:
+            logger.warning(f"Error querying Europe PMC for PMCID '{pmcid}': {exc}")
+            return None
 
 
 scholarly_client = ScholarlyAPIClient()
