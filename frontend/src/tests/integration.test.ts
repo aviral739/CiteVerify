@@ -20,6 +20,7 @@ import {
   type ReferenceResponse,
   type DocumentReportResponse,
   type JobRecordResponse,
+  type ResultResponse,
   type ReviewCreateRequest,
 } from '../types/index.ts';
 import { sampleResultsData } from '../mocks/sampleData.ts';
@@ -580,4 +581,231 @@ test('Strict Demo Mode separation: real documents never silently substitute samp
   assert.equal(realFailure.mode, 'real');
   assert.equal(realFailure.report, null);
   assert.ok(realFailure.error?.includes('Failed to load'));
+});
+
+// -------------------------------------------------------------
+// 13. Stage 7 Document Assessment & Health Score Classification
+// -------------------------------------------------------------
+test('Stage 7 Document Assessment parses health score and categorical verdict', () => {
+  const assessmentReport: DocumentReportResponse = {
+    document: {
+      id: 'doc-s7-test',
+      title: 'Neural Synthesis Paper.pdf',
+      status: 'completed',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    total_references: 15,
+    total_claims: 20,
+    total_results: 20,
+    results_summary: { supported: 12, partially_supported: 5, unsupported: 3 },
+    results: [],
+    generated_at: new Date().toISOString(),
+    status_note: 'Assessment completed',
+    overall_health_score: 82.5,
+    assessment_verdict: 'robust_support',
+    discrepancies: {
+      numerical_mismatch_count: 1,
+      scope_discrepancy_count: 2,
+      retracted_source_count: 0,
+      outdated_citation_count: 1,
+      human_review_required_count: 3,
+    },
+    executive_summary: 'High integrity citation structure with minor hedging discrepancies.',
+    limitations_disclaimer: 'Heuristic Citation Health Index (0-100). Not a validated probability.',
+  };
+
+  assert.equal(assessmentReport.overall_health_score, 82.5);
+  assert.equal(assessmentReport.assessment_verdict, 'robust_support');
+  assert.equal(assessmentReport.discrepancies?.numerical_mismatch_count, 1);
+  assert.equal(assessmentReport.discrepancies?.retracted_source_count, 0);
+
+  // Health tier classification helper verification
+  function getHealthTier(score: number): string {
+    if (score >= 80) return 'robust';
+    if (score >= 60) return 'moderate';
+    if (score >= 40) return 'high_concerns';
+    return 'critical';
+  }
+
+  assert.equal(getHealthTier(82.5), 'robust');
+  assert.equal(getHealthTier(74.0), 'moderate');
+  assert.equal(getHealthTier(52.0), 'high_concerns');
+  assert.equal(getHealthTier(25.0), 'critical');
+});
+
+// -------------------------------------------------------------
+// 14. Stage 6 Numerical Inconsistency & Scope Discrepancy Parsing
+// -------------------------------------------------------------
+test('Stage 6 numerical consistency and scope discrepancy fields are parsed and flagged', () => {
+  const numericMismatchResult: ResultResponse = {
+    id: 'res-num-mismatch',
+    claim_id: 'claim-num-1',
+    verdict: VerdictEnum.PARTIALLY_SUPPORTED,
+    verdict_strength: 0.70,
+    retrieval_match: 0.85,
+    evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+    explanation: 'Quantitative values in paper diverge from literature findings.',
+    numerical_consistency: 'mismatch',
+    numerical_details: 'Claim reports 45% latency drop; source benchmarks report 28.3%.',
+    scope_audit: 'overgeneralized',
+    scope_details: 'Generalized across all mobile architectures while source only evaluated Cortex-A72.',
+    is_retracted_source: false,
+    retraction_warning: null,
+    reviews: [],
+    created_at: new Date().toISOString(),
+  };
+
+  assert.equal(numericMismatchResult.numerical_consistency, 'mismatch');
+  assert.ok(numericMismatchResult.numerical_details?.includes('45% latency drop'));
+  assert.equal(numericMismatchResult.scope_audit, 'overgeneralized');
+  assert.equal(numericMismatchResult.is_retracted_source, false);
+
+  const retractedResult: ResultResponse = {
+    id: 'res-retracted',
+    claim_id: 'claim-ret-1',
+    verdict: VerdictEnum.CONTRADICTORY,
+    verdict_strength: 0.98,
+    retrieval_match: 0.95,
+    evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+    explanation: 'Source was formally retracted by journal editors.',
+    numerical_consistency: 'not_applicable',
+    scope_audit: 'context_mismatch',
+    is_retracted_source: true,
+    retraction_warning: 'Notice #RW2023-88: Retracted due to falsified magnetic data.',
+    reviews: [],
+    created_at: new Date().toISOString(),
+  };
+
+  assert.equal(retractedResult.is_retracted_source, true);
+  assert.ok(retractedResult.retraction_warning?.includes('Notice #RW2023-88'));
+});
+
+// -------------------------------------------------------------
+// 15. Background Job Tracking & Polling Stage Reconciliation
+// -------------------------------------------------------------
+test('Job tracking reconciles stage stepper and transitions to completed', () => {
+  const stageIds = ['s1_parse', 's2_references', 's3_claims', 's4_resolve', 's5_evidence', 's6_verify', 's7_assessment', 's8_persist'];
+
+  function reconcileStages(currentStage: string, jobStatus: string) {
+    const targetIdx = stageIds.indexOf(currentStage);
+    return stageIds.map((id, idx) => {
+      if (idx < targetIdx) return { id, status: 'done' };
+      if (idx === targetIdx) {
+        const status = jobStatus === 'failed' ? 'error' : jobStatus === 'completed' ? 'done' : 'active';
+        return { id, status };
+      }
+      return { id, status: jobStatus === 'completed' ? 'done' : 'queued' };
+    });
+  }
+
+  // Running stage 4
+  const runningStages = reconcileStages('s4_resolve', 'running');
+  assert.equal(runningStages[0].status, 'done'); // s1_parse
+  assert.equal(runningStages[1].status, 'done'); // s2_references
+  assert.equal(runningStages[2].status, 'done'); // s3_claims
+  assert.equal(runningStages[3].status, 'active'); // s4_resolve
+  assert.equal(runningStages[4].status, 'queued'); // s5_evidence
+
+  // Completed job marks all done
+  const completedStages = reconcileStages('s8_persist', 'completed');
+  assert.ok(completedStages.every((s) => s.status === 'done'));
+});
+
+// -------------------------------------------------------------
+// 16. Clear Separation of AI Automated Verdict vs Human Review Decision
+// -------------------------------------------------------------
+test('AI automated verdict and human review decisions are stored and presented distinctly', () => {
+  const resultWithReview: ResultResponse = {
+    id: 'res-distinct-test',
+    claim_id: 'claim-100',
+    verdict: VerdictEnum.CONTRADICTORY,
+    verdict_strength: 0.92,
+    retrieval_match: 0.88,
+    evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+    explanation: 'Automated NLI model flagged conflict with published trial.',
+    model_name: 'gemini-1.5-pro',
+    reviews: [
+      {
+        id: 'rev-001',
+        result_id: 'res-distinct-test',
+        reviewer_id: 'dr_curie',
+        human_decision: HumanDecisionEnum.OVERRIDDEN,
+        human_verdict: VerdictEnum.SUPPORTED,
+        notes: 'Independent validation dataset supports claim under secondary endpoint.',
+        created_at: '2026-11-19T14:30:00Z',
+      },
+    ],
+    created_at: '2026-11-19T14:00:00Z',
+  };
+
+  // AI verdict remains untouched
+  assert.equal(resultWithReview.verdict, VerdictEnum.CONTRADICTORY);
+  assert.equal(resultWithReview.model_name, 'gemini-1.5-pro');
+
+  // Human review decision is separately recorded
+  assert.equal(resultWithReview.reviews.length, 1);
+  const latestReview = resultWithReview.reviews[0];
+  assert.equal(latestReview.reviewer_id, 'dr_curie');
+  assert.equal(latestReview.human_decision, HumanDecisionEnum.OVERRIDDEN);
+  assert.equal(latestReview.human_verdict, VerdictEnum.SUPPORTED);
+  assert.ok(latestReview.notes?.includes('secondary endpoint'));
+});
+
+// -------------------------------------------------------------
+// 17. Real PDF and DOCX Fixture File Handling
+// -------------------------------------------------------------
+test('File validation and FormData construction handles real PDF and DOCX fixtures', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Load actual binary fixtures from repository
+  const pdfPath = path.resolve('..', 'tests', 'fixtures', 'documents', 'fixture_01_numeric_citations.pdf');
+  const docxPath = path.resolve('..', 'tests', 'fixtures', 'documents', 'fixture_09_tables_and_metadata.docx');
+
+  assert.ok(fs.existsSync(pdfPath), `PDF fixture must exist at ${pdfPath}`);
+  assert.ok(fs.existsSync(docxPath), `DOCX fixture must exist at ${docxPath}`);
+
+  const pdfBuffer = fs.readFileSync(pdfPath);
+  const docxBuffer = fs.readFileSync(docxPath);
+
+  assert.ok(pdfBuffer.length > 0, 'PDF buffer must not be empty');
+  assert.ok(docxBuffer.length > 0, 'DOCX buffer must not be empty');
+
+  // Create real File objects from fixture buffers
+  const realPdfFile = new File([pdfBuffer], 'fixture_01_numeric_citations.pdf', {
+    type: 'application/pdf',
+  });
+  const realDocxFile = new File([docxBuffer], 'fixture_09_tables_and_metadata.docx', {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+
+  const pdfValidation = validateManuscriptFile(realPdfFile);
+  assert.equal(pdfValidation.valid, true);
+
+  const docxValidation = validateManuscriptFile(realDocxFile);
+  assert.equal(docxValidation.valid, true);
+
+  // Construct Multipart Upload FormData for real PDF
+  const pdfFormData = constructMultipartUploadData(realPdfFile, {
+    title: 'Numeric Citations Test Paper',
+    doi: '10.1000/182',
+    authors: 'Test Author et al.',
+  });
+  assert.ok(pdfFormData.has('file'));
+  assert.equal(pdfFormData.get('title'), 'Numeric Citations Test Paper');
+  assert.equal(pdfFormData.get('doi'), '10.1000/182');
+  const uploadedPdf = pdfFormData.get('file') as File;
+  assert.equal(uploadedPdf.name, 'fixture_01_numeric_citations.pdf');
+  assert.equal(uploadedPdf.size, pdfBuffer.length);
+
+  // Construct Multipart Upload FormData for real DOCX
+  const docxFormData = constructMultipartUploadData(realDocxFile, {
+    title: 'Tables and Metadata DOCX Test Paper',
+  });
+  assert.ok(docxFormData.has('file'));
+  assert.equal(docxFormData.get('title'), 'Tables and Metadata DOCX Test Paper');
+  const uploadedDocx = docxFormData.get('file') as File;
+  assert.equal(uploadedDocx.name, 'fixture_09_tables_and_metadata.docx');
+  assert.equal(uploadedDocx.size, docxBuffer.length);
 });

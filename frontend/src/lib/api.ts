@@ -211,7 +211,7 @@ export async function uploadDocumentFile(
     throw new ApiError(validation.error || 'Invalid manuscript file.', 400);
   }
 
-  const endpoint = options?.uploadEndpoint || CONFIGURED_UPLOAD_ENDPOINT;
+  const endpoint = options?.uploadEndpoint || CONFIGURED_UPLOAD_ENDPOINT || '/api/documents/upload';
 
   // 1. If explicit multipart endpoint is configured, try multipart upload
   if (endpoint && !options?.forceMetadataOnly) {
@@ -272,7 +272,7 @@ export async function uploadDocumentFile(
 export async function uploadDocument(
   file: File,
   options?: UploadFileOptions
-): Promise<DocumentUploadResponse | UploadResult> {
+): Promise<UploadResult> {
   const targetEndpoint = options?.uploadEndpoint || CONFIGURED_UPLOAD_ENDPOINT || '/api/documents/upload';
   return uploadDocumentFile(file, {
     ...options,
