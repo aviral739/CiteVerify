@@ -48,6 +48,7 @@ from app.repositories import (
     EvidenceRepository,
     JobRepository,
     ReferenceRepository,
+    ReportRepository,
     ResultRepository,
     ReviewRepository,
 )
@@ -501,3 +502,222 @@ async def test_s4_cache_compatibility_on_shared_db(sqlite_file_db):
     assert deleted is True
     is_hit_after, _ = await cache.get("crossref", "doi:10.1000/182")
     assert is_hit_after is False
+
+
+# ---------------- 11. Report Repository Aggregation ----------------
+
+@pytest.mark.asyncio
+async def test_full_report_repository_retrieval(sqlite_file_db):
+    """Verify ReportRepository aggregates Document, Assessment, Claims, References, and Results."""
+    session_factory, _ = sqlite_file_db
+
+    async with session_factory() as session:
+        doc_repo = DocumentRepository(session)
+        ref_repo = ReferenceRepository(session)
+        claim_repo = ClaimRepository(session)
+        ev_repo = EvidenceRepository(session)
+        res_repo = ResultRepository(session)
+        ass_repo = AssessmentRepository(session)
+        rep_repo = ReportRepository(session)
+
+        # 1. Create document
+        doc = await doc_repo.create(
+            title="Complete Report Synthesis Paper",
+            doi="10.1038/s41586-020-0001-x",
+            authors="Alice Smith, Bob Jones",
+            file_type="pdf",
+            page_count=12,
+            status="completed",
+        )
+
+        # 2. Create references
+        ref1 = await ref_repo.create(
+            document_id=doc.id,
+            raw_citation="Reference 1",
+            citation_key="[1]",
+            resolved_title="Foundational Paper",
+            resolved_doi="10.1000/1",
+        )
+
+        # 3. Create claims
+        claim1 = await claim_repo.create(
+            document_id=doc.id,
+            claim_text="Transformers exceed RNN efficiency.",
+            citation_key="[1]",
+            category="finding",
+            is_key_claim=True,
+            numerical_values=["2.5x"],
+        )
+        await claim_repo.link_reference(claim_id=claim1.id, reference_id=ref1.id, citation_key="[1]")
+
+        # 4. Create evidence
+        ev1 = await ev_repo.create(
+            reference_id=ref1.id,
+            claim_id=claim1.id,
+            evidence_text="Transformers demonstrated 2.5x faster training speed.",
+            section_title="Results",
+            retrieval_score=0.96,
+        )
+
+        # 5. Create results
+        await res_repo.create(
+            claim_id=claim1.id,
+            evidence_id=ev1.id,
+            reference_id=ref1.id,
+            verdict="supported",
+            verdict_strength=0.95,
+            quote_verified=True,
+            numerical_consistency="exact_match",
+            scope_audit="consistent",
+        )
+
+        # 6. Create assessment
+        await ass_repo.save_assessment(
+            document_id=doc.id,
+            overall_health_score=94.0,
+            confidence_score=0.92,
+            assessment_verdict="robust_support",
+            verdicts_summary={"supported": 1, "unsupported": 0},
+            evidence_completeness={"full_text_count": 1},
+            executive_summary="Solid evidentiary support across claims.",
+            limitations_disclaimer="Assessed with automated NLI pipeline.",
+        )
+
+        await session.commit()
+
+        # Retrieve aggregated report
+        report = await rep_repo.get_full_report(doc.id)
+        assert report is not None
+        assert report["document"].title == "Complete Report Synthesis Paper"
+        assert report["total_references"] == 1
+        assert report["total_claims"] == 1
+        assert report["total_results"] == 1
+        assert report["results_summary"]["supported"] == 1
+        assert report["assessment"] is not None
+        assert report["assessment"]["overall_health_score"] == 94.0
+        assert report["assessment"]["assessment_verdict"] == "robust_support"
+        assert report["assessment"]["limitations_disclaimer"] == "Assessed with automated NLI pipeline."
+
+
+# ---------------- 12. S1–S7 Rich Metadata Preservation ----------------
+
+@pytest.mark.asyncio
+async def test_rich_metadata_preservation_s1_through_s7(sqlite_file_db):
+    """Verify all rich metadata fields from S1 through S7 are fully stored and retrieved."""
+    session_factory, _ = sqlite_file_db
+
+    async with session_factory() as session:
+        doc_repo = DocumentRepository(session)
+        ref_repo = ReferenceRepository(session)
+        claim_repo = ClaimRepository(session)
+        res_repo = ResultRepository(session)
+        ass_repo = AssessmentRepository(session)
+
+        # S1: Document with file_type and page_count
+        doc = await doc_repo.create(
+            title="Rich Metadata Paper",
+            file_type="docx",
+            page_count=25,
+            file_size_bytes=524288,
+        )
+
+        # S4: Reference with PMCID, retraction notice, and mismatch
+        ref = await ref_repo.create(
+            document_id=doc.id,
+            raw_citation="Retracted Study in PMC",
+            citation_key="[1]",
+            resolved_doi="10.1000/retracted",
+            pmcid="PMC9999999",
+            is_retracted=True,
+            retraction_notice="Retraction notice published due to fabricated results.",
+            doi_title_mismatch=True,
+            availability_state="full_text_available",
+            resolution_source="europe_pmc",
+        )
+
+        # S3: Claim with category, numerical values, and key-claim status
+        claim = await claim_repo.create(
+            document_id=doc.id,
+            claim_text="Enzyme reaction rate was 0.42 s^-1.",
+            category="numerical_result",
+            is_key_claim=True,
+            numerical_values=["0.42 s^-1"],
+            entities=["Cas9", "endonuclease"],
+            qualifiers=["in vitro"],
+            importance_score=0.85,
+        )
+
+        # S6: Result with quote verification, scope audit, and numerical consistency
+        res = await res_repo.create(
+            claim_id=claim.id,
+            reference_id=ref.id,
+            verdict="contradictory",
+            verdict_strength=0.91,
+            quote_verified=True,
+            numerical_consistency="mismatch",
+            numerical_details="Claim states 0.42 s^-1, source reports 0.24 s^-1.",
+            scope_audit="overgeneralized",
+            scope_details="Claim generalizes to all mammals, paper tested in vitro only.",
+            is_retracted_source=True,
+            retraction_warning="Source paper retracted.",
+            needs_human_review=True,
+        )
+
+        # S7: Assessment with discrepancies, factors, and limitations disclaimer
+        ass = await ass_repo.save_assessment(
+            document_id=doc.id,
+            overall_health_score=42.0,
+            confidence_score=0.88,
+            assessment_verdict="high_concerns",
+            discrepancies={"numerical_mismatch_count": 1, "retracted_source_count": 1},
+            factors=[{"category": "risk", "title": "Retracted source cited", "impact_level": "critical"}],
+            methodology_notes="Deterministic verification with lexical retrieval.",
+            limitations_disclaimer="Heuristic index; human audit advised for high-stakes decisions.",
+        )
+
+        await session.commit()
+
+    # Query back in a clean session and assert all rich metadata fields
+    async with session_factory() as session:
+        # 1. Document
+        doc_q = await session.execute(select(Document).where(Document.id == doc.id))
+        saved_doc = doc_q.scalar_one()
+        assert saved_doc.file_type == "docx"
+        assert saved_doc.page_count == 25
+        assert saved_doc.file_size_bytes == 524288
+
+        # 2. Reference
+        ref_q = await session.execute(select(Reference).where(Reference.id == ref.id))
+        saved_ref = ref_q.scalar_one()
+        assert saved_ref.pmcid == "PMC9999999"
+        assert saved_ref.is_retracted is True
+        assert "fabricated results" in (saved_ref.retraction_notice or "")
+        assert saved_ref.doi_title_mismatch is True
+        assert saved_ref.availability_state == "full_text_available"
+        assert saved_ref.resolution_source == "europe_pmc"
+
+        # 3. Claim
+        claim_q = await session.execute(select(Claim).where(Claim.id == claim.id))
+        saved_claim = claim_q.scalar_one()
+        assert saved_claim.category == "numerical_result"
+        assert saved_claim.is_key_claim is True
+        assert "0.42 s^-1" in (saved_claim.numerical_values or "")
+        assert "Cas9" in (saved_claim.entities or "")
+
+        # 4. Result
+        res_q = await session.execute(select(Result).where(Result.id == res.id))
+        saved_res = res_q.scalar_one()
+        assert saved_res.quote_verified is True
+        assert saved_res.numerical_consistency == "mismatch"
+        assert "0.42 s^-1" in (saved_res.numerical_details or "")
+        assert saved_res.scope_audit == "overgeneralized"
+        assert saved_res.is_retracted_source is True
+        assert saved_res.needs_human_review is True
+
+        # 5. Assessment
+        ass_q = await session.execute(select(Assessment).where(Assessment.document_id == doc.id))
+        saved_ass = ass_q.scalar_one()
+        assert saved_ass.overall_health_score == 42.0
+        assert saved_ass.assessment_verdict == "high_concerns"
+        assert "Retracted source cited" in (saved_ass.factors or "")
+        assert "human audit advised" in (saved_ass.limitations_disclaimer or "")
