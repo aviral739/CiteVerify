@@ -152,7 +152,9 @@ class VerificationOrchestrator:
             job_registry.update_stage(job_id, "s7_assessment", 87.5)
             s7_out = await run_stage_7(S7AssessmentInput(
                 document_id=document_id,
-                results=[r.model_dump() for r in s6_out.results]
+                results=[r.model_dump() for r in s6_out.results],
+                claims=enriched_claims,
+                resolved_references=[r.model_dump() if hasattr(r, "model_dump") else r for r in s4_out.resolved_references],
             ))
             executed_stages.append("s7_assessment")
 
