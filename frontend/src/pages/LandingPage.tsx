@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar, Footer } from '../components/layout/Navbar';
 import {
+  uploadDocument,
   uploadDocumentFile,
   validateManuscriptFile,
   createDocument,
@@ -73,12 +74,13 @@ export const LandingPage: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      // Connect through configurable upload readiness abstraction
-      const uploadResult = await uploadDocumentFile(selectedFile);
+      // Connect to actual multipart upload endpoint: POST /api/documents/upload
+      const uploadResult = await uploadDocument(selectedFile);
 
       if (uploadResult.isBinaryUploaded) {
-        // Binary upload succeeded: navigate to analysis
-        navigate(`/documents/${uploadResult.document.id}/analysis`);
+        // Binary upload succeeded: pass document ID and job ID to analysis pipeline
+        const jobQuery = uploadResult.job_id ? `?job_id=${encodeURIComponent(uploadResult.job_id)}` : '';
+        navigate(`/documents/${uploadResult.document.id}/analysis${jobQuery}`);
       } else {
         // Metadata-only fallback:
         // Clearly state that only metadata was registered,
@@ -88,7 +90,7 @@ export const LandingPage: React.FC = () => {
           documentId: uploadResult.document.id,
           title: uploadResult.document.title,
           message:
-            'Manuscript metadata registered. Note: The backend currently supports document metadata registration only (POST /api/documents). Binary manuscript upload (PDF/DOCX) is not yet supported by the backend pipeline, so manuscript analysis was not started.',
+            'Manuscript metadata registered. Note: The backend currently supports document metadata registration only (POST /api/documents). Binary manuscript upload (PDF/DOCX) endpoint (POST /api/documents/upload) is pending backend mounting, so manuscript analysis was not started.',
         });
       }
     } catch (err: any) {
@@ -236,10 +238,18 @@ export const LandingPage: React.FC = () => {
                       <p className="text-[13px] text-on-surface-variant mt-1 leading-relaxed">
                         {registrationNotice.message}
                       </p>
-                      <div className="flex items-center gap-2 mt-2 pt-1 border-t border-outline-variant/20 text-xs font-code-sm text-on-surface-variant">
+                      <div className="flex items-center gap-2 mt-2 pt-1 border-t border-outline-variant/20 text-xs font-code-sm text-on-surface-variant flex-wrap">
                         <span>Document ID: <strong className="text-on-surface">{registrationNotice.documentId}</strong></span>
                         <span>•</span>
                         <span>Title: <strong className="text-on-surface">{registrationNotice.title}</strong></span>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/documents/${registrationNotice.documentId}/analysis`)}
+                          className="ml-auto px-2.5 py-1 bg-surface-container hover:bg-surface-container-highest text-primary font-semibold rounded text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Track Pipeline</span>
+                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </button>
                       </div>
                     </div>
                   </div>

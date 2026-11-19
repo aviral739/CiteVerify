@@ -1,4 +1,8 @@
-import type { ResultResponse } from '../types/index.ts';
+import {
+  VerdictEnum,
+  EvidenceAvailabilityEnum,
+  type ResultResponse,
+} from '../types/index.ts';
 
 export const SSEEventType = {
   STAGE: 'stage',
@@ -11,6 +15,7 @@ export const SSEEventType = {
   STATUS: 'status',
   STAGE_STARTED: 'stage_started',
   STAGE_COMPLETED: 'stage_completed',
+  PIPELINE_COMPLETED: 'pipeline_completed',
 } as const;
 export type SSEEventType = (typeof SSEEventType)[keyof typeof SSEEventType];
 
@@ -44,6 +49,7 @@ export interface SSEClientOptions {
   url: string;
   callbacks?: SSEClientCallbacks;
   initialLastEventId?: string | null;
+  maxReconnectAttempts?: number;
   onOpen?: () => void;
   onStatusChange?: (status: 'connecting' | 'connected' | 'reconnecting' | 'idle' | 'closed') => void;
   onMessage?: (msg: SSEParsedMessage) => void;
@@ -75,7 +81,7 @@ export function parseSSEMessage(
     const trimmed = rawInput.trim();
     if (!trimmed) return null;
 
-    // Check if input is multi-line SSE format (e.g., "event: stage\ndata: {...}")
+    // Check if input is multi-line SSE format (e.g., "id: 123\nevent: stage\ndata: {...}")
     const lines = trimmed.split(/\r?\n/);
     const dataLines: string[] = [];
 
@@ -106,7 +112,7 @@ export function parseSSEMessage(
   try {
     parsedData = JSON.parse(rawData);
   } catch {
-    // Malformed JSON safely captured as plain text message
+    // Malformed JSON safely captured as plain text message without crashing
     const resolvedType = (eventType || 'message').toLowerCase();
     return {
       id: lastEventId || undefined,
@@ -131,7 +137,7 @@ export function parseSSEMessage(
     stage: parsedData.stage || undefined,
     documentId: parsedData.document_id || parsedData.documentId || undefined,
     message: parsedData.message || undefined,
-    payload: parsedData.payload || parsedData,
+    payload: parsedData.payload !== undefined ? parsedData.payload : parsedData,
     timestamp: parsedData.created_at || parsedData.timestamp || undefined,
     raw: parsedData,
   };
@@ -182,11 +188,16 @@ export class EventDeduplicator {
   public clear(): void {
     this.seenKeys.clear();
   }
+
+  public size(): number {
+    return this.seenKeys.size;
+  }
 }
 
 /**
  * Production-ready SSE client for CiteVerify verification streams.
- * Supports auto-reconnect, Last-Event-ID replay, deduplication, and granular events.
+ * Supports auto-reconnect, Last-Event-ID replay, deduplication, payload validation,
+ * and clean termination without endless reconnect loops.
  */
 export class CiteVerifySSEClient {
   private url: string;
@@ -196,6 +207,7 @@ export class CiteVerifySSEClient {
   private lastEventId: string | null = null;
   private status: 'connecting' | 'connected' | 'reconnecting' | 'idle' | 'closed' = 'connecting';
   private isExplicitlyClosed = false;
+  private isTerminal = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 8;
   private reconnectTimeout: any = null;
@@ -225,6 +237,9 @@ export class CiteVerifySSEClient {
         onError: urlOrOptions.onError || urlOrOptions.callbacks?.onError,
       };
       this.lastEventId = urlOrOptions.initialLastEventId || null;
+      if (typeof urlOrOptions.maxReconnectAttempts === 'number') {
+        this.maxReconnectAttempts = urlOrOptions.maxReconnectAttempts;
+      }
     }
     this.deduplicator = new EventDeduplicator();
   }
@@ -241,8 +256,12 @@ export class CiteVerifySSEClient {
     return this.deduplicator;
   }
 
+  public isTerminated(): boolean {
+    return this.isTerminal;
+  }
+
   public connect(): void {
-    if (this.isExplicitlyClosed) return;
+    if (this.isExplicitlyClosed || this.isTerminal) return;
 
     this.status = this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting';
     this.callbacks.onStatusChange?.(this.status);
@@ -307,13 +326,14 @@ export class CiteVerifySSEClient {
         'connected',
         'stage_started',
         'stage_completed',
+        'pipeline_completed',
       ];
       for (const name of eventNames) {
         this.eventSource.addEventListener(name, (e: any) => handleRawEvent(e));
       }
 
       this.eventSource.onerror = () => {
-        if (this.isExplicitlyClosed) return;
+        if (this.isExplicitlyClosed || this.isTerminal) return;
 
         if (this.eventSource?.readyState === EventSource.CLOSED) {
           this.status = 'closed';
@@ -377,26 +397,77 @@ export class CiteVerifySSEClient {
         this.callbacks.onClaim?.(msg.payload || msg);
         break;
 
-      case 'result':
-        if (msg.payload && msg.payload.verdict) {
-          this.callbacks.onResult?.(msg.payload as ResultResponse);
-        }
+      case 'result': {
+        const payload = msg.payload || {};
+        // Validate verdict before exposing to UI
+        const canonicalVerdicts = Object.values(VerdictEnum);
+        const rawVerdict = payload.verdict;
+        const validatedVerdict = canonicalVerdicts.includes(rawVerdict)
+          ? (rawVerdict as VerdictEnum)
+          : VerdictEnum.INSUFFICIENT_EVIDENCE;
+
+        const canonicalScopes = Object.values(EvidenceAvailabilityEnum);
+        const rawScope = payload.evidence_completeness;
+        const validatedScope = canonicalScopes.includes(rawScope)
+          ? (rawScope as EvidenceAvailabilityEnum)
+          : EvidenceAvailabilityEnum.UNAVAILABLE;
+
+        const validatedResult: ResultResponse = {
+          id: payload.id || `res-${Date.now()}`,
+          claim_id: payload.claim_id || '',
+          evidence_id: payload.evidence_id || null,
+          verdict: validatedVerdict,
+          verdict_strength: typeof payload.verdict_strength === 'number'
+            ? Math.max(0, Math.min(1, payload.verdict_strength))
+            : 0.0,
+          retrieval_match: typeof payload.retrieval_match === 'number'
+            ? Math.max(0, Math.min(1, payload.retrieval_match))
+            : 0.0,
+          evidence_completeness: validatedScope,
+          explanation: payload.explanation || null,
+          model_name: payload.model_name || null,
+          created_at: payload.created_at || new Date().toISOString(),
+          reviews: Array.isArray(payload.reviews) ? payload.reviews : [],
+          claim: payload.claim || undefined,
+          reference: payload.reference || undefined,
+          evidence_quote: payload.evidence_quote || payload.evidence_text || undefined,
+          numerical_consistency: payload.numerical_consistency || null,
+          scope_audit: payload.scope_audit || null,
+          is_retracted_source: Boolean(payload.is_retracted_source),
+          retraction_warning: payload.retraction_warning || null,
+        };
+
+        this.callbacks.onResult?.(validatedResult);
         break;
+      }
 
       case 'done':
       case 'pipeline_completed':
+        // Terminal event: close connection and prevent endless reconnect loops
+        this.isTerminal = true;
+        this.status = 'closed';
         this.callbacks.onDone?.(msg.payload || {
           documentId: msg.documentId,
           message: msg.message || 'Verification pipeline completed successfully.',
         });
+        this.closeInternal();
         break;
 
-      case 'error':
+      case 'error': {
+        const isFatal = Boolean(msg.payload?.fatal || msg.payload?.terminal);
+        if (isFatal) {
+          this.isTerminal = true;
+          this.status = 'closed';
+        }
         this.callbacks.onError?.(msg.payload || {
           stage: msg.stage,
           message: msg.message || 'Pipeline stage failed.',
         });
+        if (isFatal) {
+          this.closeInternal();
+        }
         break;
+      }
 
       default:
         break;
@@ -404,7 +475,7 @@ export class CiteVerifySSEClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.isExplicitlyClosed || this.reconnectAttempts >= this.maxReconnectAttempts) {
+    if (this.isExplicitlyClosed || this.isTerminal || this.reconnectAttempts >= this.maxReconnectAttempts) {
       return;
     }
 
@@ -417,7 +488,7 @@ export class CiteVerifySSEClient {
     }
 
     this.reconnectTimeout = setTimeout(() => {
-      if (!this.isExplicitlyClosed) {
+      if (!this.isExplicitlyClosed && !this.isTerminal) {
         if (this.eventSource) {
           this.eventSource.close();
           this.eventSource = null;
@@ -427,8 +498,7 @@ export class CiteVerifySSEClient {
     }, backoffMs);
   }
 
-  public close(): void {
-    this.isExplicitlyClosed = true;
+  private closeInternal(): void {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -437,7 +507,12 @@ export class CiteVerifySSEClient {
       this.eventSource.close();
       this.eventSource = null;
     }
-    this.status = 'closed';
     this.callbacks.onStatusChange?.('closed');
+  }
+
+  public close(): void {
+    this.isExplicitlyClosed = true;
+    this.status = 'closed';
+    this.closeInternal();
   }
 }

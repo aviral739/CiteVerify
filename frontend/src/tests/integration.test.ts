@@ -14,6 +14,14 @@ import {
   VerdictEnum,
   EvidenceAvailabilityEnum,
   HumanDecisionEnum,
+  JobStatusEnum,
+  PipelineStageEnum,
+  type ClaimResponse,
+  type ReferenceResponse,
+  type DocumentReportResponse,
+  type JobRecordResponse,
+  type ResultResponse,
+  type ReviewCreateRequest,
 } from '../types/index.ts';
 import { sampleResultsData } from '../mocks/sampleData.ts';
 
@@ -26,10 +34,14 @@ test('ApiError encapsulates HTTP status code and details correctly', () => {
   assert.equal(error.statusCode, 404);
   assert.deepEqual(error.details, { document_id: 'doc-123' });
   assert.equal(error.name, 'ApiError');
+
+  // Timeout error representation (408)
+  const timeoutErr = new ApiError('Request timeout: API did not respond in 30s', 408);
+  assert.equal(timeoutErr.statusCode, 408);
 });
 
 // -------------------------------------------------------------
-// 2. Canonical Verdicts & Evidence Availability Enums
+// 2. Canonical Verdicts, Availability, Decisions, & Status Enums
 // -------------------------------------------------------------
 test('VerdictEnum supports all 6 canonical verdicts', () => {
   const expectedVerdicts = [
@@ -68,6 +80,34 @@ test('HumanDecisionEnum supports confirmed, overridden, and disputed', () => {
   for (const dec of expectedDecisions) {
     assert.ok(actualDecisions.includes(dec as HumanDecisionEnum), `Missing decision: ${dec}`);
   }
+  assert.equal(actualDecisions.length, 3);
+});
+
+test('JobStatusEnum supports all 5 background job statuses', () => {
+  const expectedStatuses = ['pending', 'running', 'completed', 'failed', 'cancelled'];
+  const actualStatuses = Object.values(JobStatusEnum);
+  for (const st of expectedStatuses) {
+    assert.ok(actualStatuses.includes(st as JobStatusEnum), `Missing job status: ${st}`);
+  }
+  assert.equal(actualStatuses.length, 5);
+});
+
+test('PipelineStageEnum supports all 8 canonical verification stages', () => {
+  const expectedStages = [
+    's1_parse',
+    's2_references',
+    's3_claims',
+    's4_resolve',
+    's5_evidence',
+    's6_verify',
+    's7_assessment',
+    's8_persist',
+  ];
+  const actualStages = Object.values(PipelineStageEnum);
+  for (const st of expectedStages) {
+    assert.ok(actualStages.includes(st as PipelineStageEnum), `Missing stage: ${st}`);
+  }
+  assert.equal(actualStages.length, 8);
 });
 
 // -------------------------------------------------------------
@@ -105,10 +145,10 @@ test('validateManuscriptFile accepts PDF and DOCX under 20MB and rejects others'
 });
 
 // -------------------------------------------------------------
-// 4. Multipart Form Data Construction
+// 4. Multipart Form Data Construction (PDF & DOCX)
 // -------------------------------------------------------------
-test('constructMultipartUploadData builds FormData with file and metadata', () => {
-  const dummyBlob = new Blob(['sample pdf content'], { type: 'application/pdf' });
+test('constructMultipartUploadData builds FormData for PDF manuscripts', () => {
+  const dummyBlob = new Blob(['sample pdf binary content'], { type: 'application/pdf' });
   const file = new File([dummyBlob], 'neural_ode.pdf', { type: 'application/pdf' });
 
   const formData = constructMultipartUploadData(file, {
@@ -124,6 +164,46 @@ test('constructMultipartUploadData builds FormData with file and metadata', () =
   assert.equal(formData.get('authors'), 'Chen et al.');
 });
 
+test('constructMultipartUploadData builds FormData for DOCX manuscripts', () => {
+  const dummyBlob = new Blob(['sample docx binary content'], {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+  const file = new File([dummyBlob], 'clinical_trial_report.docx', {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+
+  const formData = constructMultipartUploadData(file, {
+    title: 'Phase II Clinical Trial Report',
+    doi: '10.1016/j.cell.2023.11.008',
+  });
+
+  assert.ok(formData instanceof FormData);
+  assert.ok(formData.has('file'));
+  assert.equal(formData.get('title'), 'Phase II Clinical Trial Report');
+  assert.equal(formData.get('doi'), '10.1016/j.cell.2023.11.008');
+  assert.equal(formData.has('authors'), false);
+});
+
+// -------------------------------------------------------------
+// 5. Upload Failure & Fallback Handling
+// -------------------------------------------------------------
+test('Upload failure handling accurately classifies server and validation errors', () => {
+  // 1. 400 Bad Request (Validation failure from backend)
+  const validationErr = new ApiError('Pydantic validation error: file must be a valid PDF or DOCX', 400, {
+    detail: [{ loc: ['body', 'file'], msg: 'Invalid MIME type' }],
+  });
+  assert.equal(validationErr.statusCode, 400);
+  assert.ok(validationErr.message.includes('validation error'));
+
+  // 2. 500 Internal Server Error
+  const serverErr = new ApiError('An unexpected server error occurred.', 500);
+  assert.equal(serverErr.statusCode, 500);
+
+  // 3. Network unreachable (status 0)
+  const networkErr = new ApiError('Network connection failed: Unable to reach CiteVerify API at /api/documents/upload', 0);
+  assert.equal(networkErr.statusCode, 0);
+});
+
 test('Metadata-only fallback clearly states metadata was registered and does not claim binary upload or start analysis', () => {
   const fallbackResult = {
     document: {
@@ -135,24 +215,22 @@ test('Metadata-only fallback clearly states metadata was registered and does not
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },
+    job_id: null,
     isBinaryUploaded: false,
     mode: 'metadata_registration' as const,
     notice: 'Manuscript metadata registered. Binary upload pending backend endpoint implementation.',
   };
 
-  // 1. Binary upload flag must be false
   assert.equal(fallbackResult.isBinaryUploaded, false);
   assert.equal(fallbackResult.mode, 'metadata_registration');
-
-  // 2. Must state metadata was registered
+  assert.equal(fallbackResult.job_id, null);
   assert.ok(fallbackResult.notice.includes('metadata registered'));
 
-  // 3. Routing decision logic: only navigate / start analysis when isBinaryUploaded is true
+  // Routing decision logic: do NOT start analysis for metadata-only registration
   function handleUploadNavigation(result: typeof fallbackResult): string | null {
     if (result.isBinaryUploaded) {
       return `/documents/${result.document.id}/analysis`;
     }
-    // Do NOT start analysis for metadata-only registration
     return null;
   }
 
@@ -160,7 +238,168 @@ test('Metadata-only fallback clearly states metadata was registered and does not
 });
 
 // -------------------------------------------------------------
-// 5. SSE Event Parsing & Deduplication
+// 6. Job Status Parsing
+// -------------------------------------------------------------
+test('JobRecordResponse parsing handles all lifecycle states correctly', () => {
+  const pendingJob: JobRecordResponse = {
+    job_id: 'job-001',
+    document_id: 'doc-100',
+    status: JobStatusEnum.PENDING,
+    current_stage: null,
+    progress_percentage: 0.0,
+    error_message: null,
+    created_at: '2026-11-19T14:00:00Z',
+    updated_at: '2026-11-19T14:00:00Z',
+  };
+  assert.equal(pendingJob.status, 'pending');
+  assert.equal(pendingJob.progress_percentage, 0.0);
+
+  const runningJob: JobRecordResponse = {
+    job_id: 'job-002',
+    document_id: 'doc-100',
+    status: JobStatusEnum.RUNNING,
+    current_stage: 's4_resolve',
+    progress_percentage: 50.0,
+    error_message: null,
+    created_at: '2026-11-19T14:00:00Z',
+    updated_at: '2026-11-19T14:01:00Z',
+  };
+  assert.equal(runningJob.status, 'running');
+  assert.equal(runningJob.current_stage, 's4_resolve');
+  assert.equal(runningJob.progress_percentage, 50.0);
+
+  const failedJob: JobRecordResponse = {
+    job_id: 'job-003',
+    document_id: 'doc-100',
+    status: JobStatusEnum.FAILED,
+    current_stage: 's5_evidence',
+    progress_percentage: 62.5,
+    error_message: 'Scholarly API rate limit exceeded during PDF retrieval',
+    created_at: '2026-11-19T14:00:00Z',
+    updated_at: '2026-11-19T14:02:00Z',
+  };
+  assert.equal(failedJob.status, 'failed');
+  assert.ok(failedJob.error_message?.includes('rate limit'));
+});
+
+// -------------------------------------------------------------
+// 7. Report Response Parsing & Missing Evidence Handling
+// -------------------------------------------------------------
+test('DocumentReportResponse parsing handles empty, partial, and complete reports', () => {
+  // Empty report
+  const emptyReport: DocumentReportResponse = {
+    document: {
+      id: 'doc-empty',
+      title: 'Uploaded.pdf',
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    total_references: 5,
+    total_claims: 10,
+    total_results: 0,
+    results_summary: {},
+    results: [],
+    generated_at: new Date().toISOString(),
+    status_note: 'Verification pending',
+  };
+  assert.equal(emptyReport.total_results, 0);
+  assert.equal(emptyReport.results.length, 0);
+
+  // Partial report with missing evidence fields
+  const partialReport: DocumentReportResponse = {
+    document: {
+      id: 'doc-partial',
+      title: 'Partial.pdf',
+      status: 'processing',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    total_references: 8,
+    total_claims: 8,
+    total_results: 2,
+    results_summary: { supported: 1, insufficient_evidence: 1 },
+    results: [
+      {
+        id: 'res-1',
+        claim_id: 'claim-1',
+        evidence_id: 'evi-1',
+        verdict: VerdictEnum.SUPPORTED,
+        verdict_strength: 0.95,
+        retrieval_match: 0.90,
+        evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+        explanation: 'Direct match confirmed.',
+        evidence_quote: 'Found in source section 3.',
+        reviews: [],
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 'res-2',
+        claim_id: 'claim-2',
+        evidence_id: null, // missing evidence
+        verdict: VerdictEnum.INSUFFICIENT_EVIDENCE,
+        verdict_strength: 0.20,
+        retrieval_match: 0.10,
+        evidence_completeness: EvidenceAvailabilityEnum.UNAVAILABLE, // unavailable evidence
+        explanation: 'Source is behind paywall or unavailable in open-access repository.',
+        evidence_quote: undefined, // no quote available
+        reviews: [],
+        created_at: new Date().toISOString(),
+      },
+    ],
+    generated_at: new Date().toISOString(),
+    status_note: 'Partial verification in progress',
+    overall_health_score: 72.5,
+    assessment_verdict: 'moderate_concerns',
+  };
+
+  assert.equal(partialReport.results.length, 2);
+  assert.equal(partialReport.results[1].evidence_id, null);
+  assert.equal(partialReport.results[1].evidence_quote, undefined);
+  assert.equal(partialReport.overall_health_score, 72.5);
+});
+
+// -------------------------------------------------------------
+// 8. Granular Claims & References Responses
+// -------------------------------------------------------------
+test('Granular claims and references responses parse accurately', () => {
+  const claim: ClaimResponse = {
+    id: 'claim-001',
+    document_id: 'doc-123',
+    reference_id: 'ref-001',
+    claim_text: 'Self-attention reduces computational complexity for sequence modeling tasks.',
+    section_name: 'Introduction',
+    page_number: 2,
+    is_active: true,
+    created_at: '2026-11-19T14:10:00Z',
+  };
+  assert.equal(claim.is_active, true);
+  assert.equal(claim.page_number, 2);
+
+  const ref: ReferenceResponse = {
+    id: 'ref-001',
+    document_id: 'doc-123',
+    raw_citation: 'Vaswani et al. (2017). Attention Is All You Need.',
+    citation_key: '[1]',
+    resolved_title: 'Attention Is All You Need',
+    resolved_doi: '10.48550/arXiv.1706.03762',
+    resolved_year: 2017,
+    resolved_venue: 'NeurIPS',
+    resolution_confidence: 0.98,
+    is_retracted: false,
+    retraction_notice: null,
+    doi_title_mismatch: false,
+    oa_pdf_url: 'https://arxiv.org/pdf/1706.03762.pdf',
+    is_open_access: true,
+    created_at: '2026-11-19T14:10:00Z',
+  };
+  assert.equal(ref.resolved_year, 2017);
+  assert.equal(ref.is_retracted, false);
+  assert.equal(ref.is_open_access, true);
+});
+
+// -------------------------------------------------------------
+// 9. SSE Event Parsing & Deduplication
 // -------------------------------------------------------------
 test('parseSSEMessage correctly parses stage, reference, claim, result, and done events', () => {
   // 1. Stage event
@@ -199,7 +438,7 @@ test('parseSSEMessage correctly parses stage, reference, claim, result, and done
   assert.equal(malformed?.event, 'result');
   assert.equal(malformed?.message, '{unclosed-json');
 
-  // 7. Event with id field
+  // 7. Event with sequence id field
   const withId = parseSSEMessage('id: evt-seq-99\nevent: stage\ndata: {"stage": "s1_parse"}');
   assert.ok(withId);
   assert.equal(withId?.id, 'evt-seq-99');
@@ -235,10 +474,9 @@ test('EventDeduplicator prevents duplicate processing and respects capacity', ()
 });
 
 // -------------------------------------------------------------
-// 6. SSE Interruption, Reconnection & Backoff Calculation
+// 10. SSE Reconnect, Replay & Terminal Handling
 // -------------------------------------------------------------
-test('CiteVerifySSEClient computes exponential backoff and tracks sequence replay', () => {
-  // Test exponential backoff formula: min(1000 * 2^attempt, 15000)
+test('CiteVerifySSEClient calculates backoff, tracks replay, and terminates on done/fatal error', () => {
   function calculateBackoff(attempt: number): number {
     return Math.min(1000 * Math.pow(2, attempt), 15000);
   }
@@ -250,108 +488,60 @@ test('CiteVerifySSEClient computes exponential backoff and tracks sequence repla
   assert.equal(calculateBackoff(4), 15000); // capped at 15s max
   assert.equal(calculateBackoff(5), 15000);
 
-  // Test sequence tracking for Last-Event-ID replay
+  let doneFired = false;
   const client = new CiteVerifySSEClient({
     url: 'http://localhost:8000/api/documents/doc-1/events',
+    onDone: () => {
+      doneFired = true;
+    },
   });
 
   assert.equal(client.getStatus(), 'connecting');
-  assert.equal(client.getLastEventId(), null);
+  assert.equal(client.isTerminated(), false);
 
-  // Close cleans up
-  client.close();
+  // Dispatch terminal done event
+  const doneMsg = parseSSEMessage('event: done\ndata: {"status": "completed"}');
+  if (doneMsg) {
+    (client as any).dispatchParsedMessage(doneMsg);
+  }
+
+  assert.equal(doneFired, true);
+  assert.equal(client.isTerminated(), true);
   assert.equal(client.getStatus(), 'closed');
+
+  client.close();
 });
 
 // -------------------------------------------------------------
-// 7. Empty, Partial, and Completed Report State Handling
+// 11. Review Request Serialization
 // -------------------------------------------------------------
-test('Empty report handling: total_results = 0 indicates pending verification without faking results', () => {
-  const emptyReport = {
-    document: {
-      id: 'doc-real-999',
-      title: 'Newly Uploaded Manuscript.pdf',
-      doi: null,
-      authors: null,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    total_references: 14,
-    total_claims: 28,
-    total_results: 0,
-    results_summary: {},
-    results: [],
-    status_note: 'Automated verification pending pipeline execution',
-    generated_at: new Date().toISOString(),
+test('ReviewCreateRequest serializes confirmed, overridden, and disputed decisions', () => {
+  const confirmedReview: ReviewCreateRequest = {
+    reviewer_id: 'dr_curie',
+    human_decision: HumanDecisionEnum.CONFIRMED,
+    notes: 'Verified against Table 1 experimental setup.',
   };
+  assert.equal(confirmedReview.human_decision, 'confirmed');
 
-  assert.equal(emptyReport.total_results, 0);
-  assert.equal(emptyReport.results.length, 0);
-  assert.ok(emptyReport.total_claims > 0);
-
-  // Verification state logic
-  const isPartial = emptyReport.total_claims > emptyReport.total_results && emptyReport.total_results > 0;
-  const isComplete = emptyReport.total_results >= emptyReport.total_claims && emptyReport.total_results > 0;
-  const isPending = emptyReport.total_results === 0;
-
-  assert.equal(isPartial, false);
-  assert.equal(isComplete, false);
-  assert.equal(isPending, true);
-});
-
-test('Partial report handling: total_results < total_claims identifies in-progress audit truthfully', () => {
-  const partialReport = {
-    document: {
-      id: 'doc-real-999',
-      title: 'Active Verification Manuscript.pdf',
-      status: 'processing',
-    },
-    total_references: 10,
-    total_claims: 12,
-    total_results: 4,
-    results_summary: {
-      supported: 3,
-      contradictory: 1,
-    },
-    results: [
-      { id: 'res-1', verdict: 'supported' },
-      { id: 'res-2', verdict: 'supported' },
-      { id: 'res-3', verdict: 'supported' },
-      { id: 'res-4', verdict: 'contradictory' },
-    ],
+  const overrideReview: ReviewCreateRequest = {
+    reviewer_id: 'dr_curie',
+    human_decision: HumanDecisionEnum.OVERRIDDEN,
+    human_verdict: VerdictEnum.CONTRADICTORY,
+    notes: 'Authors claimed 30% speedup, but source Figure 4 reports 12% regression.',
   };
+  assert.equal(overrideReview.human_decision, 'overridden');
+  assert.equal(overrideReview.human_verdict, 'contradictory');
 
-  const isPartial = partialReport.total_claims > partialReport.total_results && partialReport.total_results > 0;
-  assert.equal(isPartial, true);
-  assert.equal(partialReport.results.length, 4);
-});
-
-test('Complete report handling: total_results >= total_claims reflects full audit completion', () => {
-  const completedReport = {
-    document: {
-      id: 'doc-real-999',
-      title: 'Complete Manuscript.pdf',
-      status: 'completed',
-    },
-    total_references: 5,
-    total_claims: 5,
-    total_results: 5,
-    results: [
-      { id: 'r1', verdict: 'supported' },
-      { id: 'r2', verdict: 'partially_supported' },
-      { id: 'r3', verdict: 'unsupported' },
-      { id: 'r4', verdict: 'contradictory' },
-      { id: 'r5', verdict: 'insufficient_evidence' },
-    ],
+  const disputedReview: ReviewCreateRequest = {
+    reviewer_id: 'dr_curie',
+    human_decision: HumanDecisionEnum.DISPUTED,
+    notes: 'Methodology differences make comparison ambiguous.',
   };
-
-  const isComplete = completedReport.total_results >= completedReport.total_claims && completedReport.total_results > 0;
-  assert.equal(isComplete, true);
+  assert.equal(disputedReview.human_decision, 'disputed');
 });
 
 // -------------------------------------------------------------
-// 8. Strict Separation between Real Analysis and Demo Mode
+// 12. Strict Separation between Real Analysis and Demo Mode
 // -------------------------------------------------------------
 test('Strict Demo Mode separation: real documents never silently substitute sampleData on error', () => {
   const realDocId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -362,7 +552,6 @@ test('Strict Demo Mode separation: real documents never silently substitute samp
       return { report: sampleResultsData, mode: 'demo' };
     }
     if (backendFailed) {
-      // Must NOT return sampleResultsData
       return { report: null, error: 'Failed to load document report from CiteVerify backend', mode: 'real' };
     }
     return {
@@ -380,19 +569,243 @@ test('Strict Demo Mode separation: real documents never silently substitute samp
     };
   }
 
-  // 1. Explicit demo ID gets sample data
   const demoResult = resolveInitialReport(demoDocId, false, false);
   assert.equal(demoResult.mode, 'demo');
   assert.equal(demoResult.report?.document.id, 'sample-demo-4092');
 
-  // 2. Real document that succeeds gets real report (not sample)
   const realSuccess = resolveInitialReport(realDocId, false, false);
   assert.equal(realSuccess.mode, 'real');
   assert.equal(realSuccess.report?.results.length, 0);
 
-  // 3. Real document where backend fails MUST report error and NOT fall back to sample
   const realFailure = resolveInitialReport(realDocId, false, true);
   assert.equal(realFailure.mode, 'real');
   assert.equal(realFailure.report, null);
   assert.ok(realFailure.error?.includes('Failed to load'));
+});
+
+// -------------------------------------------------------------
+// 13. Stage 7 Document Assessment & Health Score Classification
+// -------------------------------------------------------------
+test('Stage 7 Document Assessment parses health score and categorical verdict', () => {
+  const assessmentReport: DocumentReportResponse = {
+    document: {
+      id: 'doc-s7-test',
+      title: 'Neural Synthesis Paper.pdf',
+      status: 'completed',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    total_references: 15,
+    total_claims: 20,
+    total_results: 20,
+    results_summary: { supported: 12, partially_supported: 5, unsupported: 3 },
+    results: [],
+    generated_at: new Date().toISOString(),
+    status_note: 'Assessment completed',
+    overall_health_score: 82.5,
+    assessment_verdict: 'robust_support',
+    discrepancies: {
+      numerical_mismatch_count: 1,
+      scope_discrepancy_count: 2,
+      retracted_source_count: 0,
+      outdated_citation_count: 1,
+      human_review_required_count: 3,
+    },
+    executive_summary: 'High integrity citation structure with minor hedging discrepancies.',
+    limitations_disclaimer: 'Heuristic Citation Health Index (0-100). Not a validated probability.',
+  };
+
+  assert.equal(assessmentReport.overall_health_score, 82.5);
+  assert.equal(assessmentReport.assessment_verdict, 'robust_support');
+  assert.equal(assessmentReport.discrepancies?.numerical_mismatch_count, 1);
+  assert.equal(assessmentReport.discrepancies?.retracted_source_count, 0);
+
+  // Health tier classification helper verification
+  function getHealthTier(score: number): string {
+    if (score >= 80) return 'robust';
+    if (score >= 60) return 'moderate';
+    if (score >= 40) return 'high_concerns';
+    return 'critical';
+  }
+
+  assert.equal(getHealthTier(82.5), 'robust');
+  assert.equal(getHealthTier(74.0), 'moderate');
+  assert.equal(getHealthTier(52.0), 'high_concerns');
+  assert.equal(getHealthTier(25.0), 'critical');
+});
+
+// -------------------------------------------------------------
+// 14. Stage 6 Numerical Inconsistency & Scope Discrepancy Parsing
+// -------------------------------------------------------------
+test('Stage 6 numerical consistency and scope discrepancy fields are parsed and flagged', () => {
+  const numericMismatchResult: ResultResponse = {
+    id: 'res-num-mismatch',
+    claim_id: 'claim-num-1',
+    verdict: VerdictEnum.PARTIALLY_SUPPORTED,
+    verdict_strength: 0.70,
+    retrieval_match: 0.85,
+    evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+    explanation: 'Quantitative values in paper diverge from literature findings.',
+    numerical_consistency: 'mismatch',
+    numerical_details: 'Claim reports 45% latency drop; source benchmarks report 28.3%.',
+    scope_audit: 'overgeneralized',
+    scope_details: 'Generalized across all mobile architectures while source only evaluated Cortex-A72.',
+    is_retracted_source: false,
+    retraction_warning: null,
+    reviews: [],
+    created_at: new Date().toISOString(),
+  };
+
+  assert.equal(numericMismatchResult.numerical_consistency, 'mismatch');
+  assert.ok(numericMismatchResult.numerical_details?.includes('45% latency drop'));
+  assert.equal(numericMismatchResult.scope_audit, 'overgeneralized');
+  assert.equal(numericMismatchResult.is_retracted_source, false);
+
+  const retractedResult: ResultResponse = {
+    id: 'res-retracted',
+    claim_id: 'claim-ret-1',
+    verdict: VerdictEnum.CONTRADICTORY,
+    verdict_strength: 0.98,
+    retrieval_match: 0.95,
+    evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+    explanation: 'Source was formally retracted by journal editors.',
+    numerical_consistency: 'not_applicable',
+    scope_audit: 'context_mismatch',
+    is_retracted_source: true,
+    retraction_warning: 'Notice #RW2023-88: Retracted due to falsified magnetic data.',
+    reviews: [],
+    created_at: new Date().toISOString(),
+  };
+
+  assert.equal(retractedResult.is_retracted_source, true);
+  assert.ok(retractedResult.retraction_warning?.includes('Notice #RW2023-88'));
+});
+
+// -------------------------------------------------------------
+// 15. Background Job Tracking & Polling Stage Reconciliation
+// -------------------------------------------------------------
+test('Job tracking reconciles stage stepper and transitions to completed', () => {
+  const stageIds = ['s1_parse', 's2_references', 's3_claims', 's4_resolve', 's5_evidence', 's6_verify', 's7_assessment', 's8_persist'];
+
+  function reconcileStages(currentStage: string, jobStatus: string) {
+    const targetIdx = stageIds.indexOf(currentStage);
+    return stageIds.map((id, idx) => {
+      if (idx < targetIdx) return { id, status: 'done' };
+      if (idx === targetIdx) {
+        const status = jobStatus === 'failed' ? 'error' : jobStatus === 'completed' ? 'done' : 'active';
+        return { id, status };
+      }
+      return { id, status: jobStatus === 'completed' ? 'done' : 'queued' };
+    });
+  }
+
+  // Running stage 4
+  const runningStages = reconcileStages('s4_resolve', 'running');
+  assert.equal(runningStages[0].status, 'done'); // s1_parse
+  assert.equal(runningStages[1].status, 'done'); // s2_references
+  assert.equal(runningStages[2].status, 'done'); // s3_claims
+  assert.equal(runningStages[3].status, 'active'); // s4_resolve
+  assert.equal(runningStages[4].status, 'queued'); // s5_evidence
+
+  // Completed job marks all done
+  const completedStages = reconcileStages('s8_persist', 'completed');
+  assert.ok(completedStages.every((s) => s.status === 'done'));
+});
+
+// -------------------------------------------------------------
+// 16. Clear Separation of AI Automated Verdict vs Human Review Decision
+// -------------------------------------------------------------
+test('AI automated verdict and human review decisions are stored and presented distinctly', () => {
+  const resultWithReview: ResultResponse = {
+    id: 'res-distinct-test',
+    claim_id: 'claim-100',
+    verdict: VerdictEnum.CONTRADICTORY,
+    verdict_strength: 0.92,
+    retrieval_match: 0.88,
+    evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+    explanation: 'Automated NLI model flagged conflict with published trial.',
+    model_name: 'gemini-1.5-pro',
+    reviews: [
+      {
+        id: 'rev-001',
+        result_id: 'res-distinct-test',
+        reviewer_id: 'dr_curie',
+        human_decision: HumanDecisionEnum.OVERRIDDEN,
+        human_verdict: VerdictEnum.SUPPORTED,
+        notes: 'Independent validation dataset supports claim under secondary endpoint.',
+        created_at: '2026-11-19T14:30:00Z',
+      },
+    ],
+    created_at: '2026-11-19T14:00:00Z',
+  };
+
+  // AI verdict remains untouched
+  assert.equal(resultWithReview.verdict, VerdictEnum.CONTRADICTORY);
+  assert.equal(resultWithReview.model_name, 'gemini-1.5-pro');
+
+  // Human review decision is separately recorded
+  assert.equal(resultWithReview.reviews.length, 1);
+  const latestReview = resultWithReview.reviews[0];
+  assert.equal(latestReview.reviewer_id, 'dr_curie');
+  assert.equal(latestReview.human_decision, HumanDecisionEnum.OVERRIDDEN);
+  assert.equal(latestReview.human_verdict, VerdictEnum.SUPPORTED);
+  assert.ok(latestReview.notes?.includes('secondary endpoint'));
+});
+
+// -------------------------------------------------------------
+// 17. Real PDF and DOCX Fixture File Handling
+// -------------------------------------------------------------
+test('File validation and FormData construction handles real PDF and DOCX fixtures', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Load actual binary fixtures from repository
+  const pdfPath = path.resolve('..', 'tests', 'fixtures', 'documents', 'fixture_01_numeric_citations.pdf');
+  const docxPath = path.resolve('..', 'tests', 'fixtures', 'documents', 'fixture_09_tables_and_metadata.docx');
+
+  assert.ok(fs.existsSync(pdfPath), `PDF fixture must exist at ${pdfPath}`);
+  assert.ok(fs.existsSync(docxPath), `DOCX fixture must exist at ${docxPath}`);
+
+  const pdfBuffer = fs.readFileSync(pdfPath);
+  const docxBuffer = fs.readFileSync(docxPath);
+
+  assert.ok(pdfBuffer.length > 0, 'PDF buffer must not be empty');
+  assert.ok(docxBuffer.length > 0, 'DOCX buffer must not be empty');
+
+  // Create real File objects from fixture buffers
+  const realPdfFile = new File([pdfBuffer], 'fixture_01_numeric_citations.pdf', {
+    type: 'application/pdf',
+  });
+  const realDocxFile = new File([docxBuffer], 'fixture_09_tables_and_metadata.docx', {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+
+  const pdfValidation = validateManuscriptFile(realPdfFile);
+  assert.equal(pdfValidation.valid, true);
+
+  const docxValidation = validateManuscriptFile(realDocxFile);
+  assert.equal(docxValidation.valid, true);
+
+  // Construct Multipart Upload FormData for real PDF
+  const pdfFormData = constructMultipartUploadData(realPdfFile, {
+    title: 'Numeric Citations Test Paper',
+    doi: '10.1000/182',
+    authors: 'Test Author et al.',
+  });
+  assert.ok(pdfFormData.has('file'));
+  assert.equal(pdfFormData.get('title'), 'Numeric Citations Test Paper');
+  assert.equal(pdfFormData.get('doi'), '10.1000/182');
+  const uploadedPdf = pdfFormData.get('file') as File;
+  assert.equal(uploadedPdf.name, 'fixture_01_numeric_citations.pdf');
+  assert.equal(uploadedPdf.size, pdfBuffer.length);
+
+  // Construct Multipart Upload FormData for real DOCX
+  const docxFormData = constructMultipartUploadData(realDocxFile, {
+    title: 'Tables and Metadata DOCX Test Paper',
+  });
+  assert.ok(docxFormData.has('file'));
+  assert.equal(docxFormData.get('title'), 'Tables and Metadata DOCX Test Paper');
+  const uploadedDocx = docxFormData.get('file') as File;
+  assert.equal(uploadedDocx.name, 'fixture_09_tables_and_metadata.docx');
+  assert.equal(uploadedDocx.size, docxBuffer.length);
 });

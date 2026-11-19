@@ -478,6 +478,87 @@ export const ResultsPage: React.FC = () => {
             </div>
           </section>
 
+          {/* Stage 7: Document Citation Health Assessment Card */}
+          {report?.overall_health_score !== undefined && report?.overall_health_score !== null && (
+            <section className="mt-space-sm bg-surface-container-lowest rounded-xl p-space-lg shadow-sm border border-outline-variant/30">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md pb-space-md border-b border-outline-variant/20">
+                <div className="flex items-start gap-space-md">
+                  <div className={`w-16 h-16 rounded-xl flex flex-col items-center justify-center font-bold text-xl border-2 shrink-0 ${
+                    report.overall_health_score >= 80
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-800'
+                      : report.overall_health_score >= 60
+                      ? 'bg-amber-500/10 border-amber-500/40 text-amber-800'
+                      : report.overall_health_score >= 40
+                      ? 'bg-orange-500/10 border-orange-500/40 text-orange-800'
+                      : 'bg-red-500/10 border-red-500/40 text-red-800'
+                  }`}>
+                    <span>{report.overall_health_score.toFixed(0)}</span>
+                    <span className="text-[10px] font-normal uppercase tracking-wider -mt-1">Health</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
+                        Stage 7 Assessment
+                      </span>
+                      {report.assessment_verdict && (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-label-sm text-label-sm font-semibold capitalize ${
+                          report.assessment_verdict === 'robust_support'
+                            ? 'bg-emerald-500/20 text-emerald-800'
+                            : report.assessment_verdict === 'moderate_concerns'
+                            ? 'bg-amber-500/20 text-amber-900'
+                            : 'bg-red-500/20 text-red-900'
+                        }`}>
+                          <span className="material-symbols-outlined text-[14px]">shield_with_heart</span>
+                          {String(report.assessment_verdict).replace(/_/g, ' ')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-body-md text-sm text-on-surface mt-1 max-w-2xl leading-relaxed">
+                      {report.executive_summary || "Document-level citation health evaluated across claim veracity, source freshness, and numeric consistency."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Discrepancy Breakdown Chips */}
+                {report.discrepancies && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
+                    <div className="p-2 rounded bg-surface-container-low border border-outline-variant/15 text-center min-w-[90px]">
+                      <span className="text-xs text-on-surface-variant block">Numeric</span>
+                      <span className={`text-base font-bold ${report.discrepancies.numerical_mismatch_count ? 'text-error' : 'text-on-surface'}`}>
+                        {report.discrepancies.numerical_mismatch_count ?? 0}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-surface-container-low border border-outline-variant/15 text-center min-w-[90px]">
+                      <span className="text-xs text-on-surface-variant block">Scope</span>
+                      <span className={`text-base font-bold ${report.discrepancies.scope_discrepancy_count ? 'text-amber-700' : 'text-on-surface'}`}>
+                        {report.discrepancies.scope_discrepancy_count ?? 0}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-surface-container-low border border-outline-variant/15 text-center min-w-[90px]">
+                      <span className="text-xs text-on-surface-variant block">Retracted</span>
+                      <span className={`text-base font-bold ${report.discrepancies.retracted_source_count ? 'text-red-900' : 'text-on-surface'}`}>
+                        {report.discrepancies.retracted_source_count ?? 0}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-surface-container-low border border-outline-variant/15 text-center min-w-[90px]">
+                      <span className="text-xs text-on-surface-variant block">Outdated</span>
+                      <span className={`text-base font-bold ${report.discrepancies.outdated_citation_count ? 'text-orange-700' : 'text-on-surface'}`}>
+                        {report.discrepancies.outdated_citation_count ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2.5 flex items-center justify-between text-xs text-on-surface-variant font-code-sm flex-wrap gap-2">
+                <span>{report.limitations_disclaimer || "Heuristic Citation Health Index (0-100). Not a validated probability."}</span>
+                {report.methodology_notes && (
+                  <span className="text-on-surface-variant/80">{report.methodology_notes}</span>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Summary Statistics & Segmented Verdict Breakdown */}
           <section className="mt-space-sm bg-surface-container-lowest rounded-xl p-space-lg shadow-sm border border-outline-variant/30">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-space-md pb-space-lg">
@@ -765,6 +846,24 @@ export const ResultsPage: React.FC = () => {
 
                             <div className="flex flex-wrap gap-1.5 mb-space-sm">
                               {getEvidenceScopeBadge(res.evidence_completeness)}
+                              {res.numerical_consistency === 'mismatch' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-error-container/20 text-error font-label-sm text-xs rounded-DEFAULT">
+                                  <span className="material-symbols-outlined text-[13px]">pin</span>
+                                  Numeric Mismatch
+                                </span>
+                              )}
+                              {(res.scope_audit === 'overgeneralized' || res.scope_audit === 'context_mismatch') && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 text-amber-900 font-label-sm text-xs rounded-DEFAULT">
+                                  <span className="material-symbols-outlined text-[13px]">tune</span>
+                                  Scope Discrepancy
+                                </span>
+                              )}
+                              {res.is_retracted_source && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-950 text-white font-label-sm text-xs rounded-DEFAULT">
+                                  <span className="material-symbols-outlined text-[13px]">warning</span>
+                                  Retracted Source
+                                </span>
+                              )}
                             </div>
 
                             <div className="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm pt-2 border-t border-outline-variant/10">
@@ -812,6 +911,19 @@ export const ResultsPage: React.FC = () => {
                         )}
                       </div>
 
+                      {/* Retracted Source Critical Alert */}
+                      {(selectedResult.is_retracted_source || selectedResult.reference?.is_retracted || selectedResult.retraction_warning) && (
+                        <div className="p-3.5 rounded-lg bg-red-950 text-white border border-red-800 text-xs flex items-start gap-2.5 shadow-sm">
+                          <span className="material-symbols-outlined text-[20px] text-red-300 shrink-0 mt-0.5">warning</span>
+                          <div className="flex flex-col">
+                            <span className="font-bold uppercase tracking-wider text-red-200">Retracted Scientific Literature Warning</span>
+                            <span className="mt-0.5 text-red-100 leading-relaxed">
+                              {selectedResult.retraction_warning || selectedResult.reference?.retraction_notice || 'This cited study has been flagged as retracted or invalid in scientific literature.'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Side-by-Side Comparison */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-space-md">
                         <div className="p-4 rounded-lg bg-surface-container-low flex flex-col space-y-2 border border-outline-variant/20">
@@ -821,6 +933,11 @@ export const ResultsPage: React.FC = () => {
                           <blockquote className="font-body-md text-[15px] text-on-surface italic leading-relaxed">
                             “{selectedResult.claim?.claim_text || 'No manuscript statement extracted.'}”
                           </blockquote>
+                          {selectedResult.claim?.section_name && (
+                            <span className="text-xs text-on-surface-variant font-code-sm pt-1">
+                              Section: {selectedResult.claim.section_name}
+                            </span>
+                          )}
                         </div>
 
                         <div className="p-4 rounded-lg bg-surface-container-low flex flex-col space-y-2 border border-outline-variant/20">
@@ -833,19 +950,40 @@ export const ResultsPage: React.FC = () => {
                           <blockquote className="font-body-md text-[15px] text-on-surface-variant italic leading-relaxed">
                             “{selectedResult.evidence_quote || "Full text passage retrieved and compared by AI model."}”
                           </blockquote>
+                          {selectedResult.reference?.resolved_venue && (
+                            <span className="text-xs text-on-surface-variant font-code-sm pt-1">
+                              Source: {selectedResult.reference.resolved_venue} {selectedResult.reference.resolved_year ? `(${selectedResult.reference.resolved_year})` : ''}
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {/* Analytical Verdict Explanation */}
-                      <div className="p-3.5 rounded-lg bg-surface-container-low border border-outline-variant/20 flex items-start gap-2">
-                        <span className="material-symbols-outlined text-[18px] text-primary shrink-0 mt-0.5">info</span>
-                        <div>
-                          <span className="font-semibold text-on-surface font-label-md text-label-md">Automated Verdict Assessment: </span>
-                          <span className="font-body-md text-body-md text-on-surface">
-                            {selectedResult.explanation || `Verdict evaluated as ${selectedResult.verdict}.`}
-                          </span>
+                      {/* S6 Numerical Consistency & Scope Inconsistency Alerts */}
+                      {(selectedResult.numerical_consistency === 'mismatch' || selectedResult.numerical_details) && (
+                        <div className="p-3.5 rounded-lg bg-error-container/20 border border-error/40 text-xs flex items-start gap-2.5">
+                          <span className="material-symbols-outlined text-[20px] text-error shrink-0 mt-0.5">pin</span>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-error uppercase tracking-wider">Numerical Inconsistency Flagged</span>
+                            <span className="mt-0.5 text-on-surface leading-relaxed">
+                              {selectedResult.numerical_details || 'The quantitative figures in the manuscript statement do not match the values reported in the cited evidence passage.'}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      )}
+
+                      {(selectedResult.scope_audit === 'overgeneralized' || selectedResult.scope_audit === 'context_mismatch' || selectedResult.scope_details) && (
+                        <div className="p-3.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-xs flex items-start gap-2.5">
+                          <span className="material-symbols-outlined text-[20px] text-amber-900 shrink-0 mt-0.5">tune</span>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-amber-900 uppercase tracking-wider">
+                              Scope Audit: {selectedResult.scope_audit ? String(selectedResult.scope_audit).replace(/_/g, ' ') : 'Discrepancy'}
+                            </span>
+                            <span className="mt-0.5 text-on-surface leading-relaxed">
+                              {selectedResult.scope_details || 'The scope or hedging of the manuscript claim diverges from the population, conditions, or methodology in the cited study.'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Evidence Integrity Notice if Inaccessible */}
                       {selectedResult.evidence_completeness === EvidenceAvailabilityEnum.UNAVAILABLE && (
@@ -857,8 +995,8 @@ export const ResultsPage: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Separate Dimensions: Retrieval Match, Evidence Scope, Verdict Strength */}
-                      <div className="grid grid-cols-3 gap-space-sm">
+                      {/* Dimensions Grid: Retrieval Match, Evidence Scope, Verdict Strength, Numerical Audit */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-space-sm">
                         <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant/20">
                           <span className="font-label-sm text-label-sm text-on-surface-variant block">Retrieval Match</span>
                           <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">
@@ -867,7 +1005,7 @@ export const ResultsPage: React.FC = () => {
                         </div>
                         <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant/20">
                           <span className="font-label-sm text-label-sm text-on-surface-variant block">Evidence Scope</span>
-                          <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">
+                          <span className="font-headline-sm text-headline-sm text-on-surface font-semibold capitalize">
                             {selectedResult.evidence_completeness === 'full_text_available'
                               ? 'Full text'
                               : selectedResult.evidence_completeness === 'abstract_only'
@@ -881,18 +1019,68 @@ export const ResultsPage: React.FC = () => {
                             {(selectedResult.verdict_strength * 100).toFixed(0)}%
                           </span>
                         </div>
+                        <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant/20">
+                          <span className="font-label-sm text-label-sm text-on-surface-variant block">Numerical Audit</span>
+                          <span className={`font-headline-sm text-headline-sm font-semibold capitalize ${
+                            selectedResult.numerical_consistency === 'mismatch'
+                              ? 'text-error'
+                              : selectedResult.numerical_consistency === 'exact_match'
+                              ? 'text-secondary'
+                              : 'text-on-surface'
+                          }`}>
+                            {selectedResult.numerical_consistency ? String(selectedResult.numerical_consistency).replace(/_/g, ' ') : 'N/A'}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Human Review Decision Trail */}
-                      {selectedResult.reviews.length > 0 && (
-                        <div className="p-3.5 bg-surface-container-low rounded-lg border border-outline-variant/20 flex flex-col gap-2">
-                          <span className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant font-semibold">
-                            Previous Editorial Reviews ({selectedResult.reviews.length})
-                          </span>
+                      {/* Explicit Separation: 1. AI Automated Verdict vs 2. Human Editorial Decision */}
+                      <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20 flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[20px] text-primary">smart_toy</span>
+                            <span className="font-label-md text-xs uppercase tracking-wider text-on-surface font-semibold">
+                              AI Automated Verdict
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {getVerdictBadge(selectedResult.verdict)}
+                            <span className="font-code-sm text-xs text-on-surface-variant">
+                              Model: {selectedResult.model_name || 'gemini-1.5-pro'}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="font-body-md text-sm text-on-surface leading-relaxed">
+                          {selectedResult.explanation || `Verdict evaluated as ${selectedResult.verdict} based on automated NLI alignment.`}
+                        </p>
+                      </div>
+
+                      {/* Explicit Separation: 2. Human Editorial Review Decision */}
+                      <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20 flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[20px] text-secondary">gavel</span>
+                            <span className="font-label-md text-xs uppercase tracking-wider text-on-surface font-semibold">
+                              Human Editorial Review Decision
+                            </span>
+                          </div>
+                          {selectedResult.reviews.length > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-secondary-container/30 text-secondary font-label-sm text-xs font-semibold">
+                              <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                              Reviewed ({selectedResult.reviews[0].human_decision.toUpperCase()})
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-900 font-label-sm text-xs font-semibold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                              Pending Human Review
+                            </span>
+                          )}
+                        </div>
+
+                        {selectedResult.reviews.length > 0 ? (
                           <div className="space-y-2">
                             {selectedResult.reviews.map((rev) => (
-                              <div key={rev.id} className="p-2.5 bg-surface-container-lowest rounded border border-outline-variant/10 text-xs flex flex-col gap-1">
-                                <div className="flex items-center justify-between">
+                              <div key={rev.id} className="p-3 bg-surface-container-lowest rounded-lg border border-outline-variant/15 text-xs flex flex-col gap-1.5">
+                                <div className="flex items-center justify-between flex-wrap gap-1">
                                   <span className="font-semibold text-primary">
                                     Reviewer: {rev.reviewer_id}
                                   </span>
@@ -900,22 +1088,30 @@ export const ResultsPage: React.FC = () => {
                                     {new Date(rev.created_at).toLocaleString()}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium text-on-surface">Decision: {rev.human_decision.toUpperCase()}</span>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium text-on-surface">
+                                    Decision: <strong className="uppercase">{rev.human_decision}</strong>
+                                  </span>
                                   {rev.human_verdict && (
-                                    <span className="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-code-sm">
-                                      Override: {rev.human_verdict}
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-semibold">
+                                      Override Verdict: {getVerdictBadge(rev.human_verdict)}
                                     </span>
                                   )}
                                 </div>
                                 {rev.notes && (
-                                  <p className="text-on-surface-variant italic mt-0.5">"{rev.notes}"</p>
+                                  <p className="text-on-surface-variant italic mt-1 bg-surface-container-low p-2 rounded border border-outline-variant/10">
+                                    "{rev.notes}"
+                                  </p>
                                 )}
                               </div>
                             ))}
                           </div>
-                        </div>
-                      )}
+                        ) : (
+                          <p className="font-body-md text-sm text-on-surface-variant italic">
+                            No human reviewer has evaluated this finding yet. Use the editorial review form below to confirm, dispute, or override the automated verdict.
+                          </p>
+                        )}
+                      </div>
 
                       {/* Human-in-the-Loop Review Submission Form */}
                       <div className="pt-space-md border-t border-outline-variant/30 flex flex-col gap-space-sm">

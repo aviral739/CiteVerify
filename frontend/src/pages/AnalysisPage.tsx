@@ -1,9 +1,16 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Navbar, Footer } from '../components/layout/Navbar';
-import { getDocument, getDocumentReport, getDocumentEventsUrl, ApiError } from '../lib/api';
+import { getDocument, getDocumentReport, getDocumentEventsUrl, getJob, ApiError } from '../lib/api';
 import { CiteVerifySSEClient, SSEParsedMessage } from '../lib/sseClient';
-import { DocumentResponse, DocumentReportResponse, ResultResponse, VerdictEnum } from '../types';
+import {
+  DocumentResponse,
+  DocumentReportResponse,
+  ResultResponse,
+  JobRecordResponse,
+  JobStatusEnum,
+  VerdictEnum,
+} from '../types';
 
 interface StageInfo {
   id: string;
@@ -43,8 +50,10 @@ export const AnalysisPage: React.FC = () => {
 
   const isDemoQuery = searchParams.get('mode') === 'demo';
   const isDemoDocId = id === 'sample-demo-4092';
+  const jobIdParam = searchParams.get('job_id');
 
   const [doc, setDoc] = useState<DocumentResponse | null>(null);
+  const [job, setJob] = useState<JobRecordResponse | null>(null);
   const [report, setReport] = useState<DocumentReportResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -178,13 +187,19 @@ export const AnalysisPage: React.FC = () => {
           },
           onDone: () => {
             if (!isMounted) return;
+            setStreamStatus('closed');
             setStages((prev) =>
               prev.map((s) => ({ ...s, status: s.status === 'error' ? 'error' : 'done' }))
             );
             // Refresh aggregated report once pipeline signals done
             getDocumentReport(id)
               .then((fresh) => {
-                if (isMounted) setReport(fresh);
+                if (isMounted) {
+                  setReport(fresh);
+                  if (fresh.results && fresh.results.length > 0) {
+                    setLiveResults(fresh.results);
+                  }
+                }
               })
               .catch(() => {});
           },
@@ -221,6 +236,97 @@ export const AnalysisPage: React.FC = () => {
       }
     };
   }, [id, isDemoDocId, isDemoQuery]);
+
+  // Fallback job & document status polling synchronization
+  useEffect(() => {
+    if (!id || isDemoDocId) return;
+
+    let isPolling = true;
+
+    const pollStatus = async () => {
+      if (!isPolling) return;
+
+      // 1. Poll job status if jobId exists
+      const targetJobId = jobIdParam || job?.job_id;
+      if (targetJobId) {
+        try {
+          const freshJob = await getJob(targetJobId);
+          if (!isPolling) return;
+          setJob(freshJob);
+
+          if (freshJob.current_stage) {
+            const normStage = normalizeStageId(freshJob.current_stage);
+            setStages((prevStages) => {
+              const targetIdx = prevStages.findIndex((s) => s.id === normStage);
+              if (targetIdx === -1) return prevStages;
+              return prevStages.map((s, idx) => {
+                if (idx < targetIdx) {
+                  return { ...s, status: 'done', detail: 'Completed' };
+                } else if (idx === targetIdx) {
+                  const sStatus =
+                    freshJob.status === JobStatusEnum.FAILED || freshJob.status === 'failed'
+                      ? 'error'
+                      : freshJob.status === JobStatusEnum.COMPLETED || freshJob.status === 'completed'
+                      ? 'done'
+                      : 'active';
+                  return {
+                    ...s,
+                    status: sStatus,
+                    detail: freshJob.status === 'completed' ? 'Completed' : 'In progress',
+                  };
+                } else {
+                  return { ...s, status: s.status === 'done' ? 'done' : 'queued' };
+                }
+              });
+            });
+          }
+
+          if (freshJob.status === JobStatusEnum.COMPLETED || freshJob.status === 'completed') {
+            const freshReport = await getDocumentReport(id);
+            if (!isPolling) return;
+            setReport(freshReport);
+            if (freshReport.results && freshReport.results.length > 0) {
+              setLiveResults(freshReport.results);
+            }
+            setStages((prev) => prev.map((s) => ({ ...s, status: s.status === 'error' ? 'error' : 'done' })));
+            return;
+          } else if (freshJob.status === JobStatusEnum.FAILED || freshJob.status === 'failed') {
+            if (!isPolling) return;
+            setErrorMessage(freshJob.error_message || 'Background verification job failed.');
+            return;
+          }
+        } catch {
+          // If job endpoint 404s, fall through to document report poll
+        }
+      }
+
+      // 2. Poll document status & report
+      try {
+        const freshDoc = await getDocument(id);
+        if (!isPolling) return;
+        setDoc(freshDoc);
+
+        const freshReport = await getDocumentReport(id);
+        if (!isPolling) return;
+        setReport(freshReport);
+        if (freshReport.results && freshReport.results.length > 0) {
+          setLiveResults(freshReport.results);
+        }
+
+        if (freshDoc.status === 'completed' || freshDoc.status === 'audit_complete' || freshDoc.status === 'verified') {
+          setStages((prev) => prev.map((s) => ({ ...s, status: s.status === 'error' ? 'error' : 'done' })));
+        }
+      } catch {
+        // Ignore network polling glitches
+      }
+    };
+
+    const intervalId = setInterval(pollStatus, 2500);
+    return () => {
+      isPolling = false;
+      clearInterval(intervalId);
+    };
+  }, [id, isDemoDocId, jobIdParam, job?.job_id]);
 
   const handleLeave = () => {
     navigate('/');
@@ -292,9 +398,11 @@ export const AnalysisPage: React.FC = () => {
                     {streamStatus === 'connected'
                       ? 'Live connection active. Analysis executes on CiteVerify backend.'
                       : streamStatus === 'reconnecting'
-                      ? 'Reconnecting to live SSE pipeline stream...'
+                      ? 'Reconnecting to live SSE pipeline stream (polling fallback active)...'
                       : streamStatus === 'idle'
-                      ? 'Stream active. Awaiting pipeline stage triggers.'
+                      ? 'Stream idle. Polling backend for stage progress...'
+                      : completedStagesCount === stages.length
+                      ? 'Verification pipeline completed. All 8 stages finished.'
                       : 'You can safely leave this page. Analysis status is saved.'}
                   </span>
                 </div>
@@ -304,6 +412,8 @@ export const AnalysisPage: React.FC = () => {
                       ? 'bg-secondary-container/40 text-secondary'
                       : streamStatus === 'reconnecting'
                       ? 'bg-amber-500/20 text-amber-800'
+                      : completedStagesCount === stages.length
+                      ? 'bg-primary-container text-on-primary'
                       : 'bg-surface-container text-on-surface-variant'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${
@@ -311,9 +421,11 @@ export const AnalysisPage: React.FC = () => {
                         ? 'bg-secondary animate-pulse'
                         : streamStatus === 'reconnecting'
                         ? 'bg-amber-600 animate-ping'
+                        : completedStagesCount === stages.length
+                        ? 'bg-primary'
                         : 'bg-outline'
                     }`}></span>
-                    {streamStatus === 'connected' ? 'Stream Live' : streamStatus === 'reconnecting' ? 'Reconnecting' : 'Standby'}
+                    {streamStatus === 'connected' ? 'Stream Live' : streamStatus === 'reconnecting' ? 'Reconnecting' : completedStagesCount === stages.length ? 'Completed' : 'Standby'}
                   </span>
                 </div>
               </div>
@@ -335,7 +447,15 @@ export const AnalysisPage: React.FC = () => {
                       </span>
                     </div>
                     <div className="flex items-center gap-space-sm mt-1 text-on-surface-variant font-body-sm text-body-sm flex-wrap">
-                      <span>ID: <span className="font-code-sm text-code-sm text-on-surface">{id}</span></span>
+                      <span>Doc ID: <span className="font-code-sm text-code-sm text-on-surface">{id}</span></span>
+                      {(jobIdParam || job?.job_id) && (
+                        <>
+                          <span>•</span>
+                          <span>Job ID: <span className="font-code-sm text-code-sm text-primary">{job?.job_id || jobIdParam}</span></span>
+                          <span>•</span>
+                          <span>Job: <span className="font-medium text-on-surface capitalize">{job?.status || 'queued'}</span></span>
+                        </>
+                      )}
                       {doc?.doi && (
                         <>
                           <span>•</span>
