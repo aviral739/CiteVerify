@@ -2,17 +2,22 @@ import type {
   AuditLogResponse,
   ClaimPatchRequest,
   ClaimPatchResponse,
+  ClaimResponse,
   DocumentCreate,
   DocumentReportResponse,
   DocumentResponse,
+  DocumentUploadResponse,
   ExportResponse,
   HealthResponse,
+  JobRecordResponse,
+  ReferenceResponse,
   ReviewCreateRequest,
   ReviewResponse,
 } from '../types/index.ts';
 
 export const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 export const ALLOWED_EXTENSIONS = ['.pdf', '.docx'] as const;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 
 /**
  * Custom API Error class with HTTP status code and parsed details from the backend.
@@ -79,9 +84,13 @@ export function constructMultipartUploadData(
 }
 
 /**
- * Generic fetch wrapper with JSON serialization, custom headers, and structured error handling.
+ * Generic fetch wrapper with JSON serialization, custom headers, timeout, and structured error handling.
  */
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS
+): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   const headers = new Headers(options.headers || {});
 
@@ -89,17 +98,33 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers.set('Content-Type', 'application/json');
   }
 
+  // Timeout controller setup
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // If caller provided a signal, chain it
+  if (options.signal) {
+    options.signal.addEventListener('abort', () => controller.abort());
+  }
+
   let response: Response;
   try {
     response = await fetch(url, {
       ...options,
       headers,
+      signal: controller.signal,
     });
   } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new ApiError(`Request timeout: CiteVerify API at ${url} did not respond within ${timeoutMs / 1000}s.`, 408);
+    }
     throw new ApiError(
       `Network connection failed: Unable to reach CiteVerify API at ${url}. ${err.message || ''}`.trim(),
       0
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   let data: any = null;
@@ -140,6 +165,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   return data as T;
 }
 
+// -----------------------------------------------------------------------------
+// System Health
+// -----------------------------------------------------------------------------
+
 /**
  * System Health Check endpoint
  * GET /health
@@ -148,26 +177,21 @@ export async function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>('/health');
 }
 
-/**
- * Register a new research document metadata record
- * POST /api/documents
- */
-export async function createDocument(data: DocumentCreate): Promise<DocumentResponse> {
-  return request<DocumentResponse>('/api/documents', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
+// -----------------------------------------------------------------------------
+// Document Upload & Ingestion
+// -----------------------------------------------------------------------------
 
 export interface UploadFileOptions {
   uploadEndpoint?: string;
   doi?: string;
   authors?: string;
+  title?: string;
   forceMetadataOnly?: boolean;
 }
 
 export interface UploadResult {
   document: DocumentResponse;
+  job_id?: string | null;
   isBinaryUploaded: boolean;
   mode: 'multipart_binary' | 'metadata_registration';
   notice?: string;
@@ -193,12 +217,26 @@ export async function uploadDocumentFile(
   if (endpoint && !options?.forceMetadataOnly) {
     const formData = constructMultipartUploadData(file, options);
     try {
-      const doc = await request<DocumentResponse>(endpoint, {
+      const resp = await request<DocumentUploadResponse | DocumentResponse>(endpoint, {
         method: 'POST',
         body: formData,
       });
+
+      const doc: DocumentResponse = 'document_id' in resp
+        ? {
+            id: resp.document_id,
+            title: resp.title || file.name,
+            status: resp.status || 'processing',
+            created_at: resp.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }
+        : (resp as DocumentResponse);
+
+      const jobId = 'job_id' in resp ? resp.job_id : null;
+
       return {
         document: doc,
+        job_id: jobId,
         isBinaryUploaded: true,
         mode: 'multipart_binary',
       };
@@ -214,17 +252,43 @@ export async function uploadDocumentFile(
 
   // 2. Register metadata via confirmed POST /api/documents
   const doc = await createDocument({
-    title: file.name,
+    title: options?.title || file.name,
     doi: options?.doi,
     authors: options?.authors,
   });
 
   return {
     document: doc,
+    job_id: null,
     isBinaryUploaded: false,
     mode: 'metadata_registration',
     notice: 'Manuscript metadata registered. Binary upload pending backend endpoint implementation.',
   };
+}
+
+/**
+ * Standard typed S8 multipart upload method: POST /api/documents/upload
+ */
+export async function uploadDocument(
+  file: File,
+  options?: UploadFileOptions
+): Promise<DocumentUploadResponse | UploadResult> {
+  const targetEndpoint = options?.uploadEndpoint || CONFIGURED_UPLOAD_ENDPOINT || '/api/documents/upload';
+  return uploadDocumentFile(file, {
+    ...options,
+    uploadEndpoint: targetEndpoint,
+  });
+}
+
+/**
+ * Register a new research document metadata record
+ * POST /api/documents
+ */
+export async function createDocument(data: DocumentCreate): Promise<DocumentResponse> {
+  return request<DocumentResponse>('/api/documents', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
 /**
@@ -246,12 +310,58 @@ export async function getDocument(id: string): Promise<DocumentResponse> {
   return request<DocumentResponse>(`/api/documents/${encodeURIComponent(id)}`);
 }
 
+// -----------------------------------------------------------------------------
+// Background Jobs & Orchestration
+// -----------------------------------------------------------------------------
+
+/**
+ * Query background verification job status
+ * GET /api/jobs/{id}
+ * Note: Provisional endpoint for S8 background orchestration tracking.
+ */
+export async function getJob(id: string): Promise<JobRecordResponse> {
+  return request<JobRecordResponse>(`/api/jobs/${encodeURIComponent(id)}`);
+}
+
+// -----------------------------------------------------------------------------
+// Verification Reports, Claims & References
+// -----------------------------------------------------------------------------
+
 /**
  * Retrieve aggregated verification report for a document
  * GET /api/documents/{id}/report
  */
 export async function getDocumentReport(id: string): Promise<DocumentReportResponse> {
   return request<DocumentReportResponse>(`/api/documents/${encodeURIComponent(id)}/report`);
+}
+
+/**
+ * Retrieve granular claims for a document
+ * GET /api/documents/{id}/claims
+ * Note: Provisional endpoint for granular claims inspection.
+ */
+export async function getDocumentClaims(
+  id: string,
+  options?: { active_only?: boolean; section?: string }
+): Promise<ClaimResponse[]> {
+  const params = new URLSearchParams();
+  if (options?.active_only !== undefined) {
+    params.set('active_only', String(options.active_only));
+  }
+  if (options?.section) {
+    params.set('section', options.section);
+  }
+  const queryString = params.toString() ? `?${params.toString()}` : '';
+  return request<ClaimResponse[]>(`/api/documents/${encodeURIComponent(id)}/claims${queryString}`);
+}
+
+/**
+ * Retrieve resolved bibliography references for a document
+ * GET /api/documents/{id}/references
+ * Note: Provisional endpoint for bibliography metadata.
+ */
+export async function getDocumentReferences(id: string): Promise<ReferenceResponse[]> {
+  return request<ReferenceResponse[]>(`/api/documents/${encodeURIComponent(id)}/references`);
 }
 
 /**
@@ -268,6 +378,10 @@ export async function patchDocumentClaim(
   });
 }
 
+// -----------------------------------------------------------------------------
+// Human-in-the-Loop Reviews
+// -----------------------------------------------------------------------------
+
 /**
  * Submit human-in-the-loop review or override on an automated verification verdict
  * PATCH /api/results/{id}/review
@@ -281,6 +395,10 @@ export async function submitReview(
     body: JSON.stringify(data),
   });
 }
+
+// -----------------------------------------------------------------------------
+// Audit Trail & Export
+// -----------------------------------------------------------------------------
 
 /**
  * Retrieve chronological audit trail for a document
