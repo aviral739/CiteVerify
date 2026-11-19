@@ -1,0 +1,581 @@
+{
+  "fixtures": [
+    {
+      "fixture_id": "FIX-01",
+      "file_name": "fixture_01_numeric_citations.pdf",
+      "format": "pdf",
+      "title": "Scalable Fault-Tolerant Quantum Surface Codes with Low Overhead",
+      "primary_features": [
+        "numeric_citations",
+        "standard_sections"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Introduction",
+        "Methods",
+        "Results",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "[1]",
+          "doi": "10.1103/PhysRevA.86.032324",
+          "year": 2012,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[2]",
+          "doi": "10.1103/PhysRevA.52.R2493",
+          "year": 1995,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[3]",
+          "doi": "10.1063/1.1499754",
+          "year": 2002,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[4]",
+          "doi": "10.48550/arXiv.quant-ph.9811052",
+          "year": 1998,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "[1]",
+          "claim_text": "Our architecture reduces physical qubit overhead by 34 percent compared to standard planar layouts.",
+          "section": "Introduction"
+        },
+        {
+          "citation_key": "[2]",
+          "claim_text": "Logical error suppression scales exponentially with code distance d when physical error is 0.001.",
+          "section": "Results"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-02",
+      "file_name": "fixture_02_author_year_citations.pdf",
+      "format": "pdf",
+      "title": "Synaptic Pruning Mechanisms in Cortical Development and Neurodegeneration",
+      "primary_features": [
+        "author_year_citations",
+        "multi_author_parenthetical"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Introduction",
+        "Discussion",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "(Bialas and Stevens, 2013)",
+          "doi": "10.1038/nn.3560",
+          "year": 2013,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "(Hong et al., 2016)",
+          "doi": "10.1126/science.aad8373",
+          "year": 2016,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "(Paolicelli et al., 2011)",
+          "doi": "10.1126/science.1202529",
+          "year": 2011,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "(Stevens et al., 2007)",
+          "doi": "10.1016/j.cell.2007.10.036",
+          "year": 2007,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "(Hong et al., 2016)",
+          "claim_text": "In murine models of Alzheimer's disease, inhibiting C1q preserves synaptic density and cognitive function.",
+          "section": "Introduction"
+        },
+        {
+          "citation_key": "(Stevens et al., 2007)",
+          "claim_text": "C1q localizes selectively to immature synapses prior to microglial engulfment.",
+          "section": "Introduction"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-03",
+      "file_name": "fixture_03_missing_references.pdf",
+      "format": "pdf",
+      "title": "Targeted Kinase Inhibition in Metastatic Adenocarcinoma",
+      "primary_features": [
+        "missing_references",
+        "dangling_in_text_citations"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Results",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "[1]",
+          "doi": "10.1056/NEJMoa040938",
+          "year": 2004,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[2]",
+          "doi": "10.1371/journal.pmed.0020073",
+          "year": 2005,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[4]",
+          "doi": "10.1126/scitranslmed.3002003",
+          "year": 2011,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "[3]",
+          "claim_text": "Prior studies established that secondary EGFR mutations cause resistance in 48 percent of non-small cell lung carcinomas.",
+          "section": "Results"
+        },
+        {
+          "citation_key": "[5]",
+          "claim_text": "Unexpectedly, concurrent down-regulation of MET amplification was observed across all responders.",
+          "section": "Results"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [
+          "[3]",
+          "[5]"
+        ],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-04",
+      "file_name": "fixture_04_duplicate_dois.pdf",
+      "format": "pdf",
+      "title": "High-Throughput Somatic Variant Calling Across Longitudinal Cohorts",
+      "primary_features": [
+        "duplicate_dois",
+        "duplicate_references"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Introduction",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "[1]",
+          "doi": "10.1038/s41586-020-2649-2",
+          "year": 2010,
+          "is_malformed": false,
+          "is_duplicate": true,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[2]",
+          "doi": "10.1093/bioinformatics/btp324",
+          "year": 2009,
+          "is_malformed": false,
+          "is_duplicate": true,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[3]",
+          "doi": "10.1038/s41586-020-2649-2",
+          "year": 2010,
+          "is_malformed": false,
+          "is_duplicate": true,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[4]",
+          "doi": "10.1093/bioinformatics/btp324",
+          "year": 2009,
+          "is_malformed": false,
+          "is_duplicate": true,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "[1]",
+          "claim_text": "Accurate variant calling in low-coverage whole-genome sequencing requires calibrated indel realignment.",
+          "section": "Abstract"
+        },
+        {
+          "citation_key": "[3]",
+          "claim_text": "Deep sequencing enables sensitive subclonal reconstruction.",
+          "section": "Introduction"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [
+          "10.1038/s41586-020-2649-2",
+          "10.1093/bioinformatics/btp324"
+        ],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-05",
+      "file_name": "fixture_05_malformed_references.pdf",
+      "format": "pdf",
+      "title": "Nonlinear Ocean Circulation Feedbacks Under Global Warming Scenarios",
+      "primary_features": [
+        "malformed_references",
+        "invalid_doi_syntax",
+        "missing_bibliographic_metadata"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Results",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "[1]",
+          "doi": "10.3402/tellusa.v13i2.9491",
+          "year": 1961,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[2]",
+          "doi": "10.5555/invalid_doi_syntax#bad_url",
+          "year": null,
+          "is_malformed": true,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[3]",
+          "doi": null,
+          "year": null,
+          "is_malformed": true,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[4]",
+          "doi": null,
+          "year": null,
+          "is_malformed": true,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "[2]",
+          "claim_text": "Freshening of the North Atlantic suppresses deep convection.",
+          "section": "Abstract"
+        },
+        {
+          "citation_key": "[3]",
+          "claim_text": "Under an RCP 8.5 greenhouse emission projection, Atlantic meridional overturning circulation decreases by 38 percent by 2100.",
+          "section": "Results"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [
+          "[2]",
+          "[3]",
+          "[4]"
+        ],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-06",
+      "file_name": "fixture_06_tables.pdf",
+      "format": "pdf",
+      "title": "Atmospheric Characterization and Transmission Spectroscopy of Warm Neptunes",
+      "primary_features": [
+        "tables",
+        "table_cell_citations",
+        "tabular_data_claims"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Observational Results",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "[1]",
+          "doi": "10.1038/nature13785",
+          "year": 2014,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[2]",
+          "doi": "10.1038/nature12887",
+          "year": 2014,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[3]",
+          "doi": "10.1038/s41586-018-0067-3",
+          "year": 2018,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "[3]",
+          "claim_text": "WASP-107b exhibits an anomalously high scale height of 930 km due to its low mean molecular weight.",
+          "section": "Observational Results"
+        },
+        {
+          "citation_key": "[1]",
+          "claim_text": "HAT-P-11b displays clear water absorption features corresponding to 3.2 scale heights.",
+          "section": "Observational Results"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-07",
+      "file_name": "fixture_07_scientific_notation.pdf",
+      "format": "pdf",
+      "title": "Ballistic Carrier Transport in Low-Dimensional Transition Metal Dichalcogenides",
+      "primary_features": [
+        "scientific_notation",
+        "exponents_and_units",
+        "physical_constants"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Physical Characteristics",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "[1]",
+          "doi": "10.1038/nnano.2010.279",
+          "year": 2011,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[2]",
+          "doi": "10.1038/nature04233",
+          "year": 2005,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "[1]",
+          "claim_text": "Carrier sheet density reached n_s = 4.85 x 10^12 cm^-2 at a gate bias of V_g = +2.5 V.",
+          "section": "Physical Characteristics"
+        },
+        {
+          "citation_key": "[1]",
+          "claim_text": "Phonon scattering lifetime was measured as tau = 2.45 x 10^-13 s at T = 300 K.",
+          "section": "Physical Characteristics"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-08",
+      "file_name": "fixture_08_scanned_image_only.pdf",
+      "format": "pdf",
+      "title": "Foundational Cybernetics and Information Feedback Loops (1954 Scanned Archive)",
+      "primary_features": [
+        "scanned_image_only",
+        "zero_text_stream",
+        "ocr_fallback_required"
+      ],
+      "expected_sections": [],
+      "expected_references": [],
+      "expected_claims": [],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": true,
+        "ocr_required": true
+      }
+    },
+    {
+      "fixture_id": "FIX-09",
+      "file_name": "fixture_09_tables_and_metadata.docx",
+      "format": "docx",
+      "title": "Comparative Benchmarking of mRNA Delivery Formulations",
+      "primary_features": [
+        "docx_format",
+        "tables",
+        "numeric_citations"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Formulation Benchmarking",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "[1]",
+          "doi": "10.1038/nrd.2017.243",
+          "year": 2018,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "[2]",
+          "doi": "10.1038/s41565-019-0591-y",
+          "year": 2019,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "[2]",
+          "claim_text": "Formulation LNP-03 demonstrated 94.2 percent encapsulation efficiency with high splenic delivery selectivity.",
+          "section": "Formulation Benchmarking"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    },
+    {
+      "fixture_id": "FIX-10",
+      "file_name": "fixture_10_author_year_multisection.docx",
+      "format": "docx",
+      "title": "Cognitive Load and Attentional Shifting in Multitasking Environments",
+      "primary_features": [
+        "docx_format",
+        "author_year_citations",
+        "multisection"
+      ],
+      "expected_sections": [
+        "Abstract",
+        "Introduction",
+        "Discussion",
+        "References"
+      ],
+      "expected_references": [
+        {
+          "citation_key": "(Baddeley, 2000)",
+          "doi": "10.1016/S1364-6613(00)01538-2",
+          "year": 2000,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "(Miyake et al., 2000)",
+          "doi": "10.1006/cogp.1999.0734",
+          "year": 2000,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        },
+        {
+          "citation_key": "(Monsell, 2003)",
+          "doi": "10.1016/S1364-6613(03)00028-7",
+          "year": 2003,
+          "is_malformed": false,
+          "is_duplicate": false,
+          "is_missing": false
+        }
+      ],
+      "expected_claims": [
+        {
+          "citation_key": "(Miyake et al., 2000)",
+          "claim_text": "Our empirical results corroborate that latent working memory capacity reduces switch latency by 28 milliseconds.",
+          "section": "Discussion"
+        }
+      ],
+      "expected_anomalies": {
+        "missing_references": [],
+        "duplicate_dois": [],
+        "malformed_references": [],
+        "scanned_image_only": false
+      }
+    }
+  ]
+}
