@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class ResolutionSourceEnum(str, Enum):
     CROSSREF = "crossref"
     OPENALEX = "openalex"
+    EUROPE_PMC = "europe_pmc"
     SEMANTIC_SCHOLAR = "semanticscholar"
     ARXIV = "arxiv"
     LOCAL_CACHE = "local_cache"
@@ -28,6 +29,7 @@ class S4ResolvedReference(BaseModel):
     Strictly satisfies:
     - S4ResolveOutput contract: citation_key, doi, title, year, venue, oa_pdf_url, confidence
     - S6 Verify requirements: id, reference_id, is_retracted, retraction_notice
+    - S5 Evidence requirements: full_text, pmcid, availability_state, original_title
     """
 
     id: str = Field(..., description="Stable reference identifier (UUID or preserved from S2)")
@@ -36,16 +38,24 @@ class S4ResolvedReference(BaseModel):
 
     # Bibliographic metadata (missing fields remain None, never fabricated)
     title: str = Field(..., description="Canonical paper title")
+    original_title: Optional[str] = Field(None, description="Original title provided in bibliography")
     doi: Optional[str] = Field(None, description="Normalized canonical DOI (10.xxxx/...)")
+    pmcid: Optional[str] = Field(None, description="PubMed Central identifier (e.g. 'PMC1234567')")
     authors: Optional[str] = Field(None, description="Formatted author names or list")
     year: Optional[int] = Field(None, description="Publication year")
     venue: Optional[str] = Field(None, description="Journal, conference, or publishing venue")
     url: Optional[str] = Field(None, description="Canonical work URL")
     abstract: Optional[str] = Field(None, description="Abstract text if available from API")
+    full_text: Optional[str] = Field(None, description="Normalized full-text source text if retrieved (e.g. from Europe PMC XML)")
 
-    # Open Access discovery
+    # Open Access discovery & availability
     oa_pdf_url: Optional[str] = Field(None, description="Direct URL to open-access PDF")
     is_open_access: bool = False
+    availability_state: str = Field("unavailable", description="Evidence availability: full_text, abstract_only, or unavailable")
+
+    # Mismatch & hygiene detection
+    doi_title_mismatch: bool = Field(False, description="Whether provided title diverges from Crossref registered title")
+    title_similarity: Optional[float] = Field(None, description="Normalized title similarity score [0.0, 1.0]")
 
     # Retraction tracking
     is_retracted: bool = False

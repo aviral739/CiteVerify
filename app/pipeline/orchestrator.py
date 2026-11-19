@@ -141,6 +141,10 @@ class VerificationOrchestrator:
                         c_dict["is_retracted"] = matched_ref["is_retracted"]
                     if matched_ref.get("retraction_notice"):
                         c_dict["retraction_notice"] = matched_ref["retraction_notice"]
+                    if matched_ref.get("doi_title_mismatch"):
+                        c_dict["doi_title_mismatch"] = matched_ref["doi_title_mismatch"]
+                    if matched_ref.get("pmcid"):
+                        c_dict["reference_pmcid"] = matched_ref["pmcid"]
                 enriched_claims.append(c_dict)
 
             s6_out = await run_stage_6(S6VerifyInput(
