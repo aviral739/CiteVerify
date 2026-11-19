@@ -85,6 +85,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 # Health Check
 @app.get("/health", response_model=HealthResponse, tags=["system"])
+@app.get("/api/health", response_model=HealthResponse, tags=["system"])
 async def health_check():
     """System health check endpoint."""
     return HealthResponse(
