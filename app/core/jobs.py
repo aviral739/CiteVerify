@@ -55,6 +55,16 @@ class JobRegistry:
             return self._jobs[job_id]
         return None
 
+    def update_progress(self, job_id: str, stage: str, progress: float, status: Optional[str] = None) -> Optional[JobRecord]:
+        """Update job stage, progress, and optionally status."""
+        rec = self.update_stage(job_id, stage, progress)
+        if rec and status:
+            try:
+                rec.status = JobStatus(status)
+            except ValueError:
+                pass
+        return rec
+
     def mark_completed(self, job_id: str) -> Optional[JobRecord]:
         """Mark a job as successfully completed."""
         if job_id in self._jobs:

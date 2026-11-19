@@ -12,6 +12,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.db import Base
+import app.models.tables  # noqa: F401 - ensure all tables are registered on Base.metadata
 
 logger = logging.getLogger("citeverify.db.migration")
 

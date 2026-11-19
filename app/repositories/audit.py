@@ -39,6 +39,9 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         await self.add(entry)
         return entry
 
+    # Alias for compatibility with append_log naming convention
+    append_log = log
+
     async def list_recent(self, limit: int = 100) -> List[AuditLog]:
         """Retrieve most recent audit logs across the application."""
         stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
