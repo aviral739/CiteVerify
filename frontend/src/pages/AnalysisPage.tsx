@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Navbar, Footer } from '../components/layout/Navbar';
 import { getDocument, getDocumentReport, getDocumentEventsUrl, getJob, ApiError } from '../lib/api';
@@ -354,9 +354,95 @@ export const AnalysisPage: React.FC = () => {
     navigate(targetUrl);
   };
 
-  const completedStagesCount = stages.filter((s) => s.status === 'done').length;
-  const currentProgressPercent = (completedStagesCount / stages.length) * 100;
-  const activeStageIdx = stages.findIndex((s) => s.status === 'active');
+  // ---------------------------------------------------------------------------
+  // Sequential Pipeline Stage Animation
+  // ---------------------------------------------------------------------------
+  const [visualCompletedCount, setVisualCompletedCount] = useState<number>(0);
+  const [visualActiveIndex, setVisualActiveIndex] = useState<number>(0);
+
+  // Accessibility: respect user preference for reduced motion
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      setPrefersReducedMotion(e.matches);
+    };
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  // Compute backend truth target: how many stages the backend has actually finished
+  const isJobFinished =
+    job?.status === JobStatusEnum.COMPLETED ||
+    job?.status === 'completed' ||
+    doc?.status === 'completed' ||
+    doc?.status === 'audit_complete' ||
+    doc?.status === 'verified' ||
+    streamStatus === 'closed' ||
+    (stages.length === 8 && stages.every((s) => s.status === 'done'));
+
+  const isJobFailed =
+    job?.status === JobStatusEnum.FAILED ||
+    job?.status === 'failed' ||
+    stages.some((s) => s.status === 'error');
+
+  const backendTargetCompleted = useMemo(() => {
+    if (isJobFinished) return 8;
+    if (isJobFailed) {
+      const errIdx = stages.findIndex((s) => s.status === 'error');
+      return errIdx !== -1 ? errIdx : 0;
+    }
+    const realDone = stages.filter((s) => s.status === 'done').length;
+    return realDone;
+  }, [isJobFinished, isJobFailed, stages]);
+
+  const backendTargetActiveIdx = useMemo(() => {
+    if (isJobFinished) return -1;
+    if (isJobFailed) return -1;
+    const actIdx = stages.findIndex((s) => s.status === 'active');
+    if (actIdx !== -1) return actIdx;
+    return backendTargetCompleted < 8 ? backendTargetCompleted : -1;
+  }, [isJobFinished, isJobFailed, stages, backendTargetCompleted]);
+
+  // Sequential progression effect: advances visual stages one-by-one with 500ms delay
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setVisualCompletedCount(backendTargetCompleted);
+      setVisualActiveIndex(backendTargetActiveIdx);
+      return;
+    }
+
+    // If already caught up with backend progress
+    if (visualCompletedCount >= backendTargetCompleted) {
+      if (visualCompletedCount >= 8) {
+        setVisualActiveIndex(-1);
+      } else {
+        setVisualActiveIndex(backendTargetActiveIdx);
+      }
+      return;
+    }
+
+    // The stage currently being completed shows active/in-progress
+    setVisualActiveIndex(visualCompletedCount);
+
+    const timer = setTimeout(() => {
+      setVisualCompletedCount((prev) => {
+        if (prev < backendTargetCompleted) {
+          return prev + 1;
+        }
+        return prev;
+      });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [visualCompletedCount, backendTargetCompleted, backendTargetActiveIdx, prefersReducedMotion]);
+
+  const currentProgressPercent = (visualCompletedCount / stages.length) * 100;
 
   return (
     <div className="bg-surface font-body-md text-on-surface antialiased flex flex-col min-h-screen">
@@ -418,7 +504,7 @@ export const AnalysisPage: React.FC = () => {
                       ? 'Reconnecting to live SSE pipeline stream (polling fallback active)...'
                       : streamStatus === 'idle'
                       ? 'Stream idle. Polling backend for stage progress...'
-                      : completedStagesCount === stages.length
+                      : visualCompletedCount === stages.length
                       ? 'Verification pipeline completed. All 8 stages finished.'
                       : 'You can safely leave this page. Analysis status is saved.'}
                   </span>
@@ -429,7 +515,7 @@ export const AnalysisPage: React.FC = () => {
                       ? 'bg-secondary-container/40 text-secondary'
                       : streamStatus === 'reconnecting'
                       ? 'bg-amber-500/20 text-amber-800'
-                      : completedStagesCount === stages.length
+                      : visualCompletedCount === stages.length
                       ? 'bg-primary-container text-on-primary'
                       : 'bg-surface-container text-on-surface-variant'
                   }`}>
@@ -438,11 +524,11 @@ export const AnalysisPage: React.FC = () => {
                         ? 'bg-secondary animate-pulse'
                         : streamStatus === 'reconnecting'
                         ? 'bg-amber-600 animate-ping'
-                        : completedStagesCount === stages.length
+                        : visualCompletedCount === stages.length
                         ? 'bg-primary'
                         : 'bg-outline'
                     }`}></span>
-                    {streamStatus === 'connected' ? 'Stream Live' : streamStatus === 'reconnecting' ? 'Reconnecting' : completedStagesCount === stages.length ? 'Completed' : 'Standby'}
+                    {streamStatus === 'connected' ? 'Stream Live' : streamStatus === 'reconnecting' ? 'Reconnecting' : visualCompletedCount === stages.length ? 'Completed' : 'Standby'}
                   </span>
                 </div>
               </div>
@@ -521,8 +607,8 @@ export const AnalysisPage: React.FC = () => {
                     </span>
                   </div>
                   <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    {completedStagesCount} of {stages.length} stages completed
-                    {activeStageIdx >= 0 ? ` · Stage ${activeStageIdx + 1} active` : ''}
+                    {visualCompletedCount} of {stages.length} stages completed
+                    {visualActiveIndex >= 0 ? ` · Stage ${visualActiveIndex + 1} active` : ''}
                   </span>
                 </div>
 
@@ -531,39 +617,51 @@ export const AnalysisPage: React.FC = () => {
                   <div className="min-w-[720px] flex items-start justify-between relative px-2">
                     <div className="absolute top-4 left-6 right-6 h-0.5 bg-surface-container -z-0">
                       <div
-                        className="h-full bg-primary-container transition-all duration-500"
+                        className="h-full bg-primary-container transition-all duration-500 ease-out"
                         style={{ width: `${currentProgressPercent}%` }}
                       ></div>
                     </div>
 
-                    {stages.map((stage) => (
-                      <div key={stage.id} className="relative z-10 flex flex-col items-center text-center w-24">
-                        {stage.status === 'done' ? (
-                          <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center shadow-sm">
-                            <span className="material-symbols-outlined text-[18px]">check</span>
-                          </div>
-                        ) : stage.status === 'active' ? (
-                          <div className="w-8 h-8 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center shadow-md ring-4 ring-primary-container/20">
-                            <span className="material-symbols-outlined text-[20px] animate-spin text-primary">progress_activity</span>
-                          </div>
-                        ) : stage.status === 'error' ? (
-                          <div className="w-8 h-8 rounded-full bg-error-container text-error flex items-center justify-center shadow-sm">
-                            <span className="material-symbols-outlined text-[18px]">error</span>
-                          </div>
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center">
-                            <span className="material-symbols-outlined text-[18px]">radio_button_unchecked</span>
-                          </div>
-                        )}
+                    {stages.map((stage, idx) => {
+                      const isDone = idx < visualCompletedCount;
+                      const isActive = idx === visualActiveIndex;
+                      const isError = stage.status === 'error' && idx === visualCompletedCount;
 
-                        <span className={`font-label-md text-label-md mt-2 ${stage.status === 'active' ? 'text-primary font-bold' : 'text-on-surface font-semibold'}`}>
-                          {stage.name}
-                        </span>
-                        <span className="font-body-sm text-[12px] text-on-surface-variant leading-tight">
-                          {stage.detail}
-                        </span>
-                      </div>
-                    ))}
+                      return (
+                        <div key={stage.id} className="relative z-10 flex flex-col items-center text-center w-24">
+                          {isDone ? (
+                            <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center shadow-sm transition-all duration-300">
+                              <span className="material-symbols-outlined text-[18px]">check</span>
+                            </div>
+                          ) : isActive ? (
+                            <div className="w-8 h-8 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center shadow-md ring-4 ring-primary-container/20 transition-all duration-300">
+                              <span className="material-symbols-outlined text-[20px] animate-spin text-primary">progress_activity</span>
+                            </div>
+                          ) : isError ? (
+                            <div className="w-8 h-8 rounded-full bg-error-container text-error flex items-center justify-center shadow-sm transition-all duration-300">
+                              <span className="material-symbols-outlined text-[18px]">error</span>
+                            </div>
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center transition-all duration-300">
+                              <span className="material-symbols-outlined text-[18px]">radio_button_unchecked</span>
+                            </div>
+                          )}
+
+                          <span className={`font-label-md text-label-md mt-2 transition-colors duration-200 ${
+                            isActive ? 'text-primary font-bold' : isDone ? 'text-on-surface font-semibold' : 'text-on-surface-variant'
+                          }`}>
+                            {stage.name}
+                          </span>
+                          <span className="font-body-sm text-[12px] text-on-surface-variant leading-tight">
+                            {isDone
+                              ? (stage.detail && stage.detail !== 'Queued' ? stage.detail : 'Completed')
+                              : isActive
+                              ? (stage.detail && stage.detail !== 'Queued' ? stage.detail : 'In progress')
+                              : stage.detail}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

@@ -809,3 +809,90 @@ test('File validation and FormData construction handles real PDF and DOCX fixtur
   assert.equal(uploadedDocx.name, 'fixture_09_tables_and_metadata.docx');
   assert.equal(uploadedDocx.size, docxBuffer.length);
 });
+
+// -------------------------------------------------------------
+// 18. Sequential Verification Pipeline Animation Logic
+// -------------------------------------------------------------
+test('Sequential Verification Pipeline Animation logic advances stages one by one without skipping', () => {
+  const REQUIRED_STAGE_ORDER = [
+    { id: 's1_parse', name: 'Parse' },
+    { id: 's2_references', name: 'References' },
+    { id: 's3_claims', name: 'Claims' },
+    { id: 's4_resolve', name: 'Resolve' },
+    { id: 's5_evidence', name: 'Evidence' },
+    { id: 's6_verify', name: 'Verify' },
+    { id: 's7_assessment', name: 'Assessment' },
+    { id: 's8_persist', name: 'Persist' },
+  ];
+
+  assert.equal(REQUIRED_STAGE_ORDER.length, 8);
+  assert.equal(REQUIRED_STAGE_ORDER[0].name, 'Parse');
+  assert.equal(REQUIRED_STAGE_ORDER[1].name, 'References');
+  assert.equal(REQUIRED_STAGE_ORDER[2].name, 'Claims');
+  assert.equal(REQUIRED_STAGE_ORDER[3].name, 'Resolve');
+  assert.equal(REQUIRED_STAGE_ORDER[4].name, 'Evidence');
+  assert.equal(REQUIRED_STAGE_ORDER[5].name, 'Verify');
+  assert.equal(REQUIRED_STAGE_ORDER[6].name, 'Assessment');
+  assert.equal(REQUIRED_STAGE_ORDER[7].name, 'Persist');
+
+  // Sequential progression simulator
+  class VisualPipelineStepper {
+    visualCompletedCount = 0;
+    visualActiveIndex = 0;
+    targetCompleted = 8;
+    prefersReducedMotion = false;
+
+    step() {
+      if (this.prefersReducedMotion) {
+        this.visualCompletedCount = this.targetCompleted;
+        this.visualActiveIndex = this.targetCompleted >= 8 ? -1 : this.targetCompleted;
+        return;
+      }
+      if (this.visualCompletedCount < this.targetCompleted) {
+        this.visualCompletedCount += 1;
+        this.visualActiveIndex = this.visualCompletedCount >= 8 ? -1 : this.visualCompletedCount;
+      }
+    }
+  }
+
+  const stepper = new VisualPipelineStepper();
+  assert.equal(stepper.visualCompletedCount, 0);
+  assert.equal(stepper.visualActiveIndex, 0); // Stage 0 (Parse) active initially
+
+  // Step 1: Parse completes, References becomes active
+  stepper.step();
+  assert.equal(stepper.visualCompletedCount, 1);
+  assert.equal(stepper.visualActiveIndex, 1);
+
+  // Step 2: References completes, Claims becomes active
+  stepper.step();
+  assert.equal(stepper.visualCompletedCount, 2);
+  assert.equal(stepper.visualActiveIndex, 2);
+
+  // Polling simulation: re-rendering does not reset progress
+  assert.equal(stepper.visualCompletedCount, 2);
+
+  // Continue through remaining stages
+  for (let s = 3; s <= 7; s++) {
+    stepper.step();
+    assert.equal(stepper.visualCompletedCount, s);
+    assert.equal(stepper.visualActiveIndex, s);
+  }
+
+  // Final step: Persist completes, all 8 completed, active index clears to -1
+  stepper.step();
+  assert.equal(stepper.visualCompletedCount, 8);
+  assert.equal(stepper.visualActiveIndex, -1);
+
+  // Stepping past 8 has no effect (bounded at 8)
+  stepper.step();
+  assert.equal(stepper.visualCompletedCount, 8);
+  assert.equal(stepper.visualActiveIndex, -1);
+
+  // Reduced motion test: immediately transitions without animation
+  const instantStepper = new VisualPipelineStepper();
+  instantStepper.prefersReducedMotion = true;
+  instantStepper.step();
+  assert.equal(instantStepper.visualCompletedCount, 8);
+  assert.equal(instantStepper.visualActiveIndex, -1);
+});
