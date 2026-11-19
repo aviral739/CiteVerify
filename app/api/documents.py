@@ -132,12 +132,14 @@ async def upload_document(
     # 5. Register in async job registry
     job_registry.register(job_id=job_id, document_id=doc_id)
 
-    # 6. Dispatch pipeline orchestrator in background task
-    background_tasks.add_task(
-        orchestrator.execute,
-        document_id=doc_id,
-        job_id=job_id,
-        file_path=str(saved_path.resolve()),
+    # 6. Dispatch pipeline orchestrator asynchronously in background task
+    import asyncio
+    asyncio.create_task(
+        orchestrator.execute(
+            document_id=doc_id,
+            job_id=job_id,
+            file_path=str(saved_path.resolve()),
+        )
     )
 
     return DocumentUploadResponse(
