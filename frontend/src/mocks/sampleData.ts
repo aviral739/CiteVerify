@@ -1,9 +1,9 @@
+import type { DocumentReportResponse } from '../types/index.ts';
 import {
-  DocumentReportResponse,
   VerdictEnum,
   EvidenceAvailabilityEnum,
   HumanDecisionEnum,
-} from '../types';
+} from '../types/index.ts';
 
 export const sampleResultsData: DocumentReportResponse = {
   document: {

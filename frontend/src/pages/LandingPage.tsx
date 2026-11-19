@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar, Footer } from '../components/layout/Navbar';
-import { createDocument, seedDemoDocument } from '../lib/api';
+import {
+  uploadDocumentFile,
+  validateManuscriptFile,
+  createDocument,
+  seedDemoDocument,
+  ApiError,
+} from '../lib/api';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -9,6 +15,11 @@ export const LandingPage: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [registrationNotice, setRegistrationNotice] = useState<{
+    documentId: string;
+    title: string;
+    message: string;
+  } | null>(null);
 
   // Single claim form state
   const [claimText, setClaimText] = useState('');
@@ -17,65 +28,121 @@ export const LandingPage: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setSelectedFile(file);
-      setErrorMessage(null);
+      const validation = validateManuscriptFile(file);
+      if (!validation.valid) {
+        setErrorMessage(validation.error || 'Invalid file format.');
+        setSelectedFile(null);
+      } else {
+        setSelectedFile(file);
+        setErrorMessage(null);
+      }
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
-      setErrorMessage(null);
+      const file = e.dataTransfer.files[0];
+      const validation = validateManuscriptFile(file);
+      if (!validation.valid) {
+        setErrorMessage(validation.error || 'Invalid file format.');
+        setSelectedFile(null);
+      } else {
+        setSelectedFile(file);
+        setErrorMessage(null);
+      }
     }
   };
 
+  const handleClearFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedFile(null);
+    setErrorMessage(null);
+  };
+
   const handleSubmitFile = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || isSubmitting) return;
+
+    const validation = validateManuscriptFile(selectedFile);
+    if (!validation.valid) {
+      setErrorMessage(validation.error || 'Invalid file format.');
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMessage(null);
 
     try {
-      // Connect to real backend: POST /api/documents
-      const doc = await createDocument({
-        title: selectedFile.name,
-      });
-      navigate(`/documents/${doc.id}/analysis`);
+      // Connect through configurable upload readiness abstraction
+      const uploadResult = await uploadDocumentFile(selectedFile);
+
+      if (uploadResult.isBinaryUploaded) {
+        // Binary upload succeeded: navigate to analysis
+        navigate(`/documents/${uploadResult.document.id}/analysis`);
+      } else {
+        // Metadata-only fallback:
+        // Clearly state that only metadata was registered,
+        // do not claim manuscript was uploaded, and do not start analysis.
+        setSelectedFile(null);
+        setRegistrationNotice({
+          documentId: uploadResult.document.id,
+          title: uploadResult.document.title,
+          message:
+            'Manuscript metadata registered. Note: The backend currently supports document metadata registration only (POST /api/documents). Binary manuscript upload (PDF/DOCX) is not yet supported by the backend pipeline, so manuscript analysis was not started.',
+        });
+      }
     } catch (err: any) {
-      console.warn("Backend unavailable or upload error, routing with local session ID:", err);
-      // Fallback to sample document for demonstration if backend is unreachable
-      navigate(`/documents/sample-demo-4092/analysis`);
+      console.error("Document upload/registration failed:", err);
+      let userMsg = "Failed to upload document. Please ensure the CiteVerify backend server is running.";
+      if (err instanceof ApiError) {
+        userMsg = `Server error (${err.statusCode}): ${err.message}`;
+      } else if (err.message) {
+        userMsg = err.message;
+      }
+      setErrorMessage(userMsg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDemoClick = async () => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
     setErrorMessage(null);
+
     try {
-      // Real backend endpoint: POST /api/documents/demo
+      // Call real backend demo endpoint: POST /api/documents/demo
       const doc = await seedDemoDocument('attention_is_all_you_need');
-      navigate(`/documents/${doc.id}/analysis`);
+      navigate(`/documents/${doc.id}/analysis?mode=demo`);
     } catch (err: any) {
-      console.warn("Backend demo call failed, opening demonstrator:", err);
-      navigate(`/documents/sample-demo-4092/analysis`);
+      console.warn("Backend demo call failed, using client demo fallback:", err);
+      // Demonstrator fallback only for explicit demo mode when backend is unavailable
+      navigate(`/documents/sample-demo-4092/analysis?mode=demo&offline=true`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleSingleClaimSubmit = async () => {
-    if (!claimText.trim()) return;
+    if (!claimText.trim() || isSubmitting) return;
     setIsSubmitting(true);
+    setErrorMessage(null);
+
     try {
       const doc = await createDocument({
-        title: `Single Claim Check: "${claimText.slice(0, 30)}..."`,
+        title: `Single Claim Check: "${claimText.slice(0, 40)}${claimText.length > 40 ? '...' : ''}"`,
         doi: refInput.trim() || undefined,
       });
       navigate(`/documents/${doc.id}/analysis`);
-    } catch {
-      navigate(`/documents/sample-demo-4092/analysis`);
+    } catch (err: any) {
+      console.error("Single claim creation failed:", err);
+      let userMsg = "Failed to verify single claim. Backend is unavailable.";
+      if (err instanceof ApiError) {
+        userMsg = `Server error (${err.statusCode}): ${err.message}`;
+      } else if (err.message) {
+        userMsg = err.message;
+      }
+      setErrorMessage(userMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -96,7 +163,7 @@ export const LandingPage: React.FC = () => {
               <p className="font-body-lg text-[16px] text-on-surface-variant max-w-2xl leading-relaxed">
                 Upload a paper or report. CiteVerify finds claims that cite sources, retrieves the originals, and shows the exact passage that supports, or doesn’t support, each claim. You review every finding.
               </p>
-              
+
               <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
                 <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-surface-container text-on-surface font-label-md text-[14px]">
                   <span className="material-symbols-outlined text-[18px] text-secondary">check_circle</span>
@@ -120,11 +187,10 @@ export const LandingPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveTab('file')}
-                  className={`py-3 px-6 font-label-md text-[14px] font-semibold flex items-center gap-2 -mb-px transition-colors ${
-                    activeTab === 'file'
+                  className={`py-3 px-6 font-label-md text-[14px] font-semibold flex items-center gap-2 -mb-px transition-colors ${activeTab === 'file'
                       ? 'text-primary border-b-2 border-primary'
                       : 'text-on-surface-variant hover:text-on-surface border-b-2 border-transparent'
-                  }`}
+                    }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">upload_file</span>
                   Upload paper
@@ -132,11 +198,10 @@ export const LandingPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveTab('text')}
-                  className={`py-3 px-6 font-label-md text-[14px] font-semibold flex items-center gap-2 -mb-px transition-colors ${
-                    activeTab === 'text'
+                  className={`py-3 px-6 font-label-md text-[14px] font-semibold flex items-center gap-2 -mb-px transition-colors ${activeTab === 'text'
                       ? 'text-primary border-b-2 border-primary'
                       : 'text-on-surface-variant hover:text-on-surface border-b-2 border-transparent'
-                  }`}
+                    }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">edit_note</span>
                   Check one claim
@@ -144,9 +209,47 @@ export const LandingPage: React.FC = () => {
               </div>
 
               {errorMessage && (
-                <div className="p-3 bg-error-container text-on-error-container rounded-lg text-sm flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px]">error</span>
-                  <span>{errorMessage}</span>
+                <div className="p-4 bg-error-container text-on-error-container rounded-lg text-sm flex items-start justify-between gap-3 border border-error/30 animate-fadeIn">
+                  <div className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-[20px] text-error shrink-0 mt-0.5">error</span>
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-error">Validation / Upload Error</span>
+                      <span className="text-[13px] mt-0.5">{errorMessage}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setErrorMessage(null)}
+                    className="text-on-error-container/70 hover:text-on-error-container shrink-0 p-1 rounded hover:bg-error-container/80 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                </div>
+              )}
+
+              {registrationNotice && (
+                <div className="p-4 bg-surface-container-high border border-outline-variant/40 text-on-surface rounded-lg text-sm flex items-start justify-between gap-3 shadow-xs animate-fadeIn">
+                  <div className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-[22px] text-primary shrink-0 mt-0.5">info</span>
+                    <div className="flex flex-col text-on-surface">
+                      <span className="font-semibold text-primary">Metadata Registered (Binary Upload Pending)</span>
+                      <p className="text-[13px] text-on-surface-variant mt-1 leading-relaxed">
+                        {registrationNotice.message}
+                      </p>
+                      <div className="flex items-center gap-2 mt-2 pt-1 border-t border-outline-variant/20 text-xs font-code-sm text-on-surface-variant">
+                        <span>Document ID: <strong className="text-on-surface">{registrationNotice.documentId}</strong></span>
+                        <span>•</span>
+                        <span>Title: <strong className="text-on-surface">{registrationNotice.title}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationNotice(null)}
+                    className="text-on-surface-variant hover:text-on-surface shrink-0 p-1 rounded hover:bg-surface-container transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
                 </div>
               )}
 
@@ -160,7 +263,7 @@ export const LandingPage: React.FC = () => {
                   >
                     <input
                       type="file"
-                      accept=".pdf"
+                      accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       onChange={handleFileChange}
                       className="hidden"
                     />
@@ -168,14 +271,23 @@ export const LandingPage: React.FC = () => {
                       <span className="material-symbols-outlined text-[32px]">cloud_upload</span>
                     </div>
                     <p className="font-label-md text-[16px] text-on-surface font-semibold mb-1">
-                      Drop a PDF here or <span className="text-primary underline underline-offset-2">browse</span>
+                      Drop a PDF or DOCX here or <span className="text-primary underline underline-offset-2">browse</span>
                     </p>
-                    <p className="font-body-sm text-[14px] text-on-surface-variant">PDF up to 20 MB</p>
-                    
+                    <p className="font-body-sm text-[14px] text-on-surface-variant">PDF or DOCX up to 20 MB</p>
+
                     {selectedFile && (
-                      <div className="inline-flex items-center gap-2 mt-3 px-3 py-1 bg-surface-container-high rounded-full text-[14px] font-label-md text-primary">
-                        <span className="material-symbols-outlined text-[16px]">description</span>
-                        <span>{selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(1)} MB)</span>
+                      <div className="inline-flex items-center gap-2 mt-4 px-3.5 py-1.5 bg-surface-container-high rounded-full text-[14px] font-label-md text-primary shadow-xs">
+                        <span className="material-symbols-outlined text-[18px]">description</span>
+                        <span className="font-medium">{selectedFile.name}</span>
+                        <span className="text-on-surface-variant text-xs">({(selectedFile.size / 1024 / 1024).toFixed(1)} MB)</span>
+                        <button
+                          type="button"
+                          onClick={handleClearFile}
+                          className="ml-1 text-on-surface-variant hover:text-error transition-colors p-0.5 rounded-full"
+                          title="Remove file"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">cancel</span>
+                        </button>
                       </div>
                     )}
                   </label>
@@ -186,19 +298,18 @@ export const LandingPage: React.FC = () => {
                         type="button"
                         onClick={handleSubmitFile}
                         disabled={!selectedFile || isSubmitting}
-                        className={`w-full min-h-[48px] py-3 px-5 rounded-lg font-label-md text-[14px] font-semibold flex items-center justify-center gap-2 transition-all ${
-                          selectedFile && !isSubmitting
+                        className={`w-full min-h-[48px] py-3 px-5 rounded-lg font-label-md text-[14px] font-semibold flex items-center justify-center gap-2 transition-all ${selectedFile && !isSubmitting
                             ? 'bg-primary-container text-on-primary hover:bg-primary shadow-sm cursor-pointer'
                             : 'bg-primary-container text-inverse-on-surface opacity-50 cursor-not-allowed'
-                        }`}
+                          }`}
                       >
-                        <span className="material-symbols-outlined text-[18px]">
+                        <span className={`material-symbols-outlined text-[18px] ${isSubmitting ? 'animate-spin' : ''}`}>
                           {isSubmitting ? 'sync' : 'search_check'}
                         </span>
-                        <span>{isSubmitting ? 'Starting audit...' : 'Check my citations'}</span>
+                        <span>{isSubmitting ? 'Registering document...' : 'Check my citations'}</span>
                       </button>
                       <p className="font-body-sm text-[13px] text-outline text-center mt-1.5">
-                        {selectedFile ? 'Ready to analyze' : 'Choose a PDF to enable'}
+                        {selectedFile ? 'Ready to analyze with backend' : 'Choose a PDF or DOCX to enable'}
                       </p>
                     </div>
 
@@ -207,13 +318,13 @@ export const LandingPage: React.FC = () => {
                         type="button"
                         onClick={handleDemoClick}
                         disabled={isSubmitting}
-                        className="w-full min-h-[48px] py-3 px-5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-[14px] font-semibold border-2 border-primary hover:bg-surface-container-low transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                        className="w-full min-h-[48px] py-3 px-5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-[14px] font-semibold border-2 border-primary hover:bg-surface-container-low transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
                       >
                         <span className="material-symbols-outlined text-[18px] text-primary">science</span>
                         <span>Try a sample paper with planted errors</span>
                       </button>
                       <p className="font-body-sm text-[13px] text-outline text-center mt-1.5">
-                        Runs on a built-in paper. No upload needed.
+                        Demonstration audit. No local file needed.
                       </p>
                     </div>
                   </div>
@@ -258,8 +369,10 @@ export const LandingPage: React.FC = () => {
                       disabled={!claimText.trim() || isSubmitting}
                       className="w-full sm:w-auto min-h-[48px] py-3 px-8 rounded-lg bg-primary text-on-primary font-label-md text-[14px] font-semibold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
-                      <span className="material-symbols-outlined text-[18px]">verified</span>
-                      <span>Verify single claim</span>
+                      <span className={`material-symbols-outlined text-[18px] ${isSubmitting ? 'animate-spin' : ''}`}>
+                        {isSubmitting ? 'sync' : 'verified'}
+                      </span>
+                      <span>{isSubmitting ? 'Submitting claim...' : 'Verify single claim'}</span>
                     </button>
                   </div>
                 </div>
@@ -281,7 +394,7 @@ export const LandingPage: React.FC = () => {
                     <span className="w-6 h-6 rounded-full bg-primary-fixed text-primary flex items-center justify-center text-[12px] font-semibold">1</span>
                     <span>Upload</span>
                   </div>
-                  <p className="font-body-sm text-[14px] text-on-surface-variant leading-tight">Add your PDF</p>
+                  <p className="font-body-sm text-[14px] text-on-surface-variant leading-tight">Add your PDF or DOCX</p>
                 </div>
 
                 <div className="flex flex-col items-center gap-1.5 p-2">
@@ -444,4 +557,3 @@ export const LandingPage: React.FC = () => {
     </div>
   );
 };
-
