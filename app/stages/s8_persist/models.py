@@ -161,6 +161,9 @@ class S8PersistInput(BaseModel):
                             quote_verified=bool(res.get("quote_verified", False)),
                             numerical_consistency=res.get("numerical_consistency", "not_applicable"),
                             scope_audit=res.get("scope_audit", "consistent"),
+                            ai_verdict=res.get("ai_verdict"),
+                            override_reason=res.get("override_reason"),
+                            verification_method=res.get("verification_method", "gemini_assisted"),
                         )
                     )
 

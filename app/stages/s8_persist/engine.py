@@ -487,6 +487,8 @@ class PersistenceEngine:
                                 retraction_warning=r_dict.get("retraction_warning"),
                                 contradiction_type=r_dict.get("contradiction_type"),
                                 needs_human_review=bool(r_dict.get("needs_human_review", False)),
+                                ai_verdict=r_dict.get("ai_verdict"),
+                                override_reason=r_dict.get("override_reason"),
                                 model_name=model_name,
                                 verification_method=r_dict.get("verification_method", "llm_nli"),
                                 warnings=r_dict.get("warnings"),

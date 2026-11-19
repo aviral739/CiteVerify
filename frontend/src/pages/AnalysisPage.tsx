@@ -196,10 +196,18 @@ export const AnalysisPage: React.FC = () => {
               .then((fresh) => {
                 if (isMounted) {
                   setReport(fresh);
+                  if (fresh.document) {
+                    setDoc(fresh.document);
+                  }
                   if (fresh.results && fresh.results.length > 0) {
                     setLiveResults(fresh.results);
                   }
                 }
+              })
+              .catch(() => {});
+            getDocument(id)
+              .then((d) => {
+                if (isMounted) setDoc(d);
               })
               .catch(() => {});
           },
@@ -282,9 +290,18 @@ export const AnalysisPage: React.FC = () => {
           }
 
           if (freshJob.status === JobStatusEnum.COMPLETED || freshJob.status === 'completed') {
+            try {
+              const freshDoc = await getDocument(id);
+              if (isPolling) setDoc(freshDoc);
+            } catch {
+              // Ignore glitch, will fallback to freshReport.document
+            }
             const freshReport = await getDocumentReport(id);
             if (!isPolling) return;
             setReport(freshReport);
+            if (freshReport.document && isPolling) {
+              setDoc(freshReport.document);
+            }
             if (freshReport.results && freshReport.results.length > 0) {
               setLiveResults(freshReport.results);
             }

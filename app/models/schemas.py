@@ -197,6 +197,10 @@ class ResultResponse(BaseModel):
     evidence_quote: Optional[str] = None
 
     # Verification dimensions
+    verification_method: Optional[str] = "gemini_assisted"
+    ai_verdict: Optional[str] = None
+    override_reason: Optional[str] = None
+    quote_verified: Optional[bool] = False
     numerical_consistency: Optional[str] = None
     numerical_details: Optional[str] = None
     scope_audit: Optional[str] = None

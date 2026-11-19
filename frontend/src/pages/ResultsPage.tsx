@@ -861,6 +861,12 @@ export const ResultsPage: React.FC = () => {
 
                             <div className="flex flex-wrap gap-1.5 mb-space-sm">
                               {getEvidenceScopeBadge(res.evidence_completeness)}
+                              {res.quote_verified && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/15 text-emerald-800 font-label-sm text-xs rounded-DEFAULT">
+                                  <span className="material-symbols-outlined text-[13px]">format_quote</span>
+                                  Quote Verified
+                                </span>
+                              )}
                               {res.numerical_consistency === 'mismatch' && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-error-container/20 text-error font-label-sm text-xs rounded-DEFAULT">
                                   <span className="material-symbols-outlined text-[13px]">pin</span>
@@ -1051,19 +1057,52 @@ export const ResultsPage: React.FC = () => {
                       {/* Explicit Separation: 1. AI Automated Verdict vs 2. Human Editorial Decision */}
                       <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-3">
                         <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20 flex-wrap gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="material-symbols-outlined text-[20px] text-primary">smart_toy</span>
                             <span className="font-label-md text-xs uppercase tracking-wider text-on-surface font-semibold">
                               AI Automated Verdict
                             </span>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold ${
+                              selectedResult.verification_method === 'deterministic_fallback'
+                                ? 'bg-amber-500/20 text-amber-900 border border-amber-500/30'
+                                : 'bg-primary-container/30 text-primary border border-primary/20'
+                            }`}>
+                              <span className="material-symbols-outlined text-[13px]">
+                                {selectedResult.verification_method === 'deterministic_fallback' ? 'rule' : 'neurology'}
+                              </span>
+                              {selectedResult.verification_method === 'deterministic_fallback'
+                                ? 'Deterministic Fallback'
+                                : 'Gemini-Assisted'}
+                            </span>
+                            {selectedResult.quote_verified && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/15 text-emerald-800 border border-emerald-500/20">
+                                <span className="material-symbols-outlined text-[13px]">format_quote</span>
+                                Quote Verified
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             {getVerdictBadge(selectedResult.verdict)}
                             <span className="font-code-sm text-xs text-on-surface-variant">
-                              Model: {selectedResult.model_name || 'gemini-1.5-pro'}
+                              Model: {selectedResult.model_name || 'gemini-2.5-flash-lite'}
                             </span>
                           </div>
                         </div>
+
+                        {selectedResult.override_reason && (
+                          <div className="p-3 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-950 text-xs flex items-start gap-2">
+                            <span className="material-symbols-outlined text-[18px] text-amber-800 shrink-0 mt-0.5">policy</span>
+                            <div>
+                              <span className="font-bold">Deterministic Safety Rule Override:</span> {selectedResult.override_reason}
+                              {selectedResult.ai_verdict && (
+                                <span className="block mt-0.5 text-on-surface-variant font-code-sm">
+                                  Initial AI semantic verdict was: <strong className="uppercase">{selectedResult.ai_verdict}</strong>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         <p className="font-body-md text-sm text-on-surface leading-relaxed">
                           {selectedResult.explanation || `Verdict evaluated as ${selectedResult.verdict} based on automated NLI alignment.`}
                         </p>

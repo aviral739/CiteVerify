@@ -238,6 +238,9 @@ class Result(Base):
     contradiction_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     needs_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    ai_verdict: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    override_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     model_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     verification_method: Mapped[str] = mapped_column(String(64), default="llm_nli")
     warnings: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON serialized list

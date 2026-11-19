@@ -46,6 +46,8 @@ class ClaimEvidencePair(BaseModel):
     reference_doi: Optional[str] = None
     reference_year: Optional[int] = None
     reference_title: Optional[str] = None
+    reference_authors: Optional[str] = None
+    doi_title_mismatch: bool = False
     is_retracted: bool = False
     retraction_notice: Optional[str] = None
     has_newer_conflicting_evidence: bool = False
@@ -81,9 +83,14 @@ class VerificationResultItem(BaseModel):
     contradiction_type: Optional[str] = None      # direct_refutation, retracted_source, opposite_effect, null
     needs_human_review: bool = False
 
+    # AI vs Deterministic Auditability
+    ai_verdict: Optional[str] = None
+    override_reason: Optional[str] = None
+    supporting_quotes: List[str] = Field(default_factory=list)
+
     # Provenance
-    model_name: str = "gemini-1.5-pro"
-    verification_method: str = "llm_nli"          # llm_nli, deterministic_rule_based, abstention
+    model_name: str = "gemini-2.5-flash-lite"
+    verification_method: str = "gemini_assisted"   # gemini_assisted, deterministic_fallback, abstention
     warnings: List[str] = Field(default_factory=list)
 
 

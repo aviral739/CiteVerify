@@ -244,6 +244,8 @@ class VerificationOrchestrator:
                         c_dict["reference_year"] = matched_ref["year"]
                     if matched_ref.get("title"):
                         c_dict["reference_title"] = matched_ref["title"]
+                    if matched_ref.get("authors"):
+                        c_dict["reference_authors"] = matched_ref["authors"]
                     if "is_retracted" in matched_ref:
                         c_dict["is_retracted"] = matched_ref["is_retracted"]
                     if matched_ref.get("retraction_notice"):

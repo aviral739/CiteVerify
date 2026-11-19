@@ -222,6 +222,10 @@ export interface ResultResponse {
   evidence_quote?: string;
 
   // Provisional S6 verification dimensions
+  verification_method?: string | null;
+  ai_verdict?: string | null;
+  override_reason?: string | null;
+  quote_verified?: boolean | null;
   numerical_consistency?: 'exact_match' | 'mismatch' | 'missing_in_source' | 'not_applicable' | string | null;
   numerical_details?: string | null;
   scope_audit?: 'consistent' | 'overgeneralized' | 'hedged' | 'context_mismatch' | string | null;

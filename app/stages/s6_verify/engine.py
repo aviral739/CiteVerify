@@ -1,12 +1,13 @@
 """Core verification engine for S6 Claim Verification.
 
 Coordinates deterministic numerical checking, scope auditing, source status auditing,
-and LLM Natural Language Inference (NLI) with robust rule-based fallback.
+strengthened quotation guard verification, and Gemini Natural Language Inference (NLI)
+with robust rule-based fallback.
 """
 
 import logging
 import re
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 from app.models.schemas import EvidenceAvailabilityEnum, VerdictEnum
@@ -18,6 +19,7 @@ from app.stages.s6_verify.models import (
 from app.stages.s6_verify.numeric_checker import check_numerical_consistency
 from app.stages.s6_verify.scope_auditor import audit_scope
 from app.stages.s6_verify.llm_verifier import LLMClaimVerifier
+from app.stages.s6_verify.quote_guard import verify_quotation
 
 logger = logging.getLogger("citeverify.s6.engine")
 
@@ -35,30 +37,6 @@ def _compute_token_overlap(claim: str, evidence: str) -> float:
     e_tokens = _tokenize(evidence)
     overlap = c_tokens.intersection(e_tokens)
     return len(overlap) / len(c_tokens)
-
-
-def _check_verbatim_quote(claim: str, evidence: str) -> bool:
-    """Check if significant verbatim sequences from claim appear in evidence."""
-    c_lower = claim.lower()
-    e_lower = evidence.lower()
-
-    # 1. Check for quoted substrings in claim
-    quotes = re.findall(r'["\']([^"\']{6,})["\']', claim)
-    for q in quotes:
-        if q.lower().strip() in e_lower:
-            return True
-
-    # 2. Check for 3+ consecutive words
-    words = re.findall(r"\b\w+\b", c_lower)
-    if len(words) < 3:
-        return claim.lower().strip() in e_lower if words else False
-
-    for i in range(len(words) - 2):
-        phrase = " ".join(words[i : i + 3])
-        if phrase in e_lower:
-            return True
-
-    return False
 
 
 class ClaimVerificationEngine:
@@ -152,7 +130,6 @@ class ClaimVerificationEngine:
         passage_provenance_notes: List[str] = []
         passage_scope_statuses: List[str] = []
         passage_overlaps: List[float] = []
-        passage_quotes: List[bool] = []
         contradicting_passages: List[str] = []
 
         # Joint numerical tracking across passages
@@ -182,10 +159,6 @@ class ClaimVerificationEngine:
             passage_scope_statuses.append(p_scope.status)
             if p_scope.status == "context_mismatch":
                 contradicting_passages.append(f"{pass_label}: context mismatch ({p_scope.details})")
-
-            # Quote verification on this passage
-            p_quote = _check_verbatim_quote(pair.claim_text, p.evidence_text)
-            passage_quotes.append(p_quote)
 
             # Lexical overlap on this passage
             p_overlap = _compute_token_overlap(pair.claim_text, p.evidence_text)
@@ -230,7 +203,6 @@ class ClaimVerificationEngine:
             aggregate_scope_status = passage_scope_statuses[0] if passage_scope_statuses else "consistent"
             aggregate_scope_details = "Scope evaluated across passages."
 
-        quote_verified = any(passage_quotes)
         max_overlap = max(passage_overlaps) if passage_overlaps else 0.0
         avg_overlap = sum(passage_overlaps) / len(passage_overlaps) if passage_overlaps else 0.0
 
@@ -240,10 +212,17 @@ class ClaimVerificationEngine:
             for i, p in enumerate(valid_passages)
         )
 
-        # 3. LLM NLI Verification
+        # 3. LLM NLI Verification (Gemini)
         llm_assessment = await self.llm_verifier.verify_pair(
             claim_text=pair.claim_text,
             evidence_text=formatted_passages_for_llm,
+            citation_key=pair.citation_key,
+            section_name=pair.section_name,
+            reference_id=pair.reference_id,
+            reference_title=pair.reference_title,
+            reference_doi=pair.reference_doi,
+            reference_authors=pair.reference_authors,
+            reference_year=pair.reference_year,
             claim_numbers=pair.numerical_values,
             claim_qualifiers=pair.qualifiers,
             claim_conditions=pair.experimental_conditions,
@@ -256,20 +235,37 @@ class ClaimVerificationEngine:
             scope_status=aggregate_scope_status,
         )
 
-        # 4. Synthesize Verdict (LLM or Rule-Based Fallback)
+        # 4. Synthesize Verdict & Verify Quotes
+        ai_verdict: Optional[VerdictEnum] = None
+        override_reason: Optional[str] = None
+        supporting_quotes: List[str] = []
+
         if llm_assessment:
             raw_verdict = llm_assessment.verdict.lower().strip()
-            verdict = VerdictEnum(raw_verdict)
+            ai_verdict = VerdictEnum(raw_verdict)
+            verdict = ai_verdict
             verdict_strength = llm_assessment.verdict_strength
-            explanation = llm_assessment.explanation
+            explanation = llm_assessment.reasoning
             contradiction_type = llm_assessment.contradiction_type
-            quote_verified = quote_verified or llm_assessment.quote_verified
-            verification_method = "llm_nli"
+            verification_method = "gemini_assisted"
+            model_name = llm_assessment.model_name
+            supporting_quotes = llm_assessment.supporting_quotes or []
+
+            # Check proposed quotes with strengthened quote guard
+            candidate_quote = supporting_quotes[0] if supporting_quotes else None
+            q_res = verify_quotation(candidate_quote, valid_passages, pair.claim_text)
+            quote_verified = q_res.is_verified
+
             if llm_assessment.warnings:
                 warnings.extend(llm_assessment.warnings)
         else:
             # Deterministic Rule-Based Fallback
-            verification_method = "deterministic_rule_based"
+            verification_method = "deterministic_fallback"
+            model_name = getattr(self.llm_verifier.llm, "model", "gemini-2.5-flash-lite")
+
+            # Validate quotes against manuscript text
+            q_res = verify_quotation(None, valid_passages, pair.claim_text)
+            quote_verified = q_res.is_verified
 
             if contradicting_passages or aggregate_num_status == "mismatch":
                 verdict = VerdictEnum.CONTRADICTORY
@@ -282,7 +278,7 @@ class ClaimVerificationEngine:
                 contradiction_type = "opposite_effect"
                 explanation = f"Context mismatch between claim and evidence: {aggregate_scope_details}"
             elif is_abstract_only:
-                # F-04: Conservative abstract-only fallback
+                # Conservative abstract-only fallback
                 if aggregate_scope_status == "overgeneralized":
                     verdict = VerdictEnum.PARTIALLY_SUPPORTED
                     verdict_strength = 0.65
@@ -294,7 +290,6 @@ class ClaimVerificationEngine:
                     contradiction_type = None
                     explanation = f"Abstract lacks specific quantitative figures ({', '.join(pair.numerical_values)}); full text required."
                 elif max_overlap < 0.25:
-                    # Low lexical overlap alone must NOT establish unsupported for abstract
                     verdict = VerdictEnum.INSUFFICIENT_EVIDENCE
                     verdict_strength = 0.25
                     contradiction_type = None
@@ -332,11 +327,11 @@ class ClaimVerificationEngine:
                     contradiction_type = None
                     explanation = "Retrieved full-text evidence passages do not corroborate the stated findings or claims."
 
-        # 5. Apply Mandatory Scientific Safety Overrides
+        # 5. Apply Mandatory Scientific Safety Overrides (Auditable Order of Operations)
         needs_human_review = False
         is_retracted_source = pair.is_retracted
 
-        # A. Retraction Policy
+        # Rule 1 — Retraction Policy
         if pair.is_retracted:
             is_retracted_source = True
             needs_human_review = True
@@ -344,16 +339,45 @@ class ClaimVerificationEngine:
             retraction_note = pair.retraction_notice or "Source publication has been retracted by publisher."
             warnings.append(f"RETRACTED SOURCE WARNING: {retraction_note}")
 
-            # Do NOT automatically classify as contradictory unless evidence actually establishes opposing finding
             if verdict not in (VerdictEnum.CONTRADICTORY, VerdictEnum.POTENTIALLY_OUTDATED):
+                if ai_verdict and ai_verdict != VerdictEnum.INSUFFICIENT_EVIDENCE:
+                    override_reason = f"Retracted source override: AI assigned '{ai_verdict.value}', but retracted sources require explicit human review."
                 verdict = VerdictEnum.INSUFFICIENT_EVIDENCE
-                verdict_strength = 0.2
+                verdict_strength = 0.20
                 explanation = (
                     f"Verification abstained: {retraction_note} Retracted sources cannot reliably support "
                     "claims without explicit human review."
                 )
 
-        # B. Outdatedness Policy (Requires identifiable newer conflicting evidence)
+        # Rule 2 — DOI/Title Identity Mismatch
+        if pair.doi_title_mismatch:
+            needs_human_review = True
+            mismatch_note = "Resolved DOI title diverges from cited bibliography entry."
+            warnings.append(f"DOI_TITLE_MISMATCH: {mismatch_note}")
+            if verdict == VerdictEnum.SUPPORTED:
+                if ai_verdict:
+                    override_reason = "DOI/Title identity mismatch: cited DOI belongs to a different paper."
+                verdict = VerdictEnum.UNSUPPORTED
+                verdict_strength = 0.65
+                explanation = f"Verification downgraded: {mismatch_note} Evidence cannot be attributed to cited reference."
+
+        # Rule 3 — Numerical Conflict Consistency
+        if aggregate_num_status == "mismatch" and verdict == VerdictEnum.SUPPORTED:
+            if ai_verdict:
+                override_reason = f"Numerical mismatch override: AI assigned supported, but quantitative figures conflict ({aggregate_num_details})."
+            verdict = VerdictEnum.PARTIALLY_SUPPORTED
+            verdict_strength = min(verdict_strength, 0.60)
+            explanation = f"Qualitative topic matches, but quantitative values mismatch: {aggregate_num_details}. {explanation}"
+
+        # Rule 4 — Scope Overgeneralization Consistency
+        if aggregate_scope_status == "overgeneralized" and verdict == VerdictEnum.SUPPORTED:
+            if ai_verdict:
+                override_reason = f"Scope overgeneralization override: claim overgeneralizes evidence scope ({aggregate_scope_details})."
+            verdict = VerdictEnum.PARTIALLY_SUPPORTED
+            verdict_strength = min(verdict_strength, 0.70)
+            explanation = f"Partially supported: claim overgeneralizes evidence scope. {aggregate_scope_details}. {explanation}"
+
+        # Rule 5 — Outdatedness Policy
         if pair.has_newer_conflicting_evidence:
             verdict = VerdictEnum.POTENTIALLY_OUTDATED
             verdict_strength = max(verdict_strength, 0.80)
@@ -362,19 +386,7 @@ class ClaimVerificationEngine:
                 f"{pair.newer_conflicting_summary or ''} {explanation}".strip()
             )
 
-        # C. Numerical Conflict Consistency
-        if aggregate_num_status == "mismatch" and verdict == VerdictEnum.SUPPORTED:
-            verdict = VerdictEnum.PARTIALLY_SUPPORTED
-            verdict_strength = min(verdict_strength, 0.60)
-            explanation = f"Qualitative topic matches, but quantitative values mismatch: {aggregate_num_details}. {explanation}"
-
-        # D. Scope Overgeneralization Consistency
-        if aggregate_scope_status == "overgeneralized" and verdict == VerdictEnum.SUPPORTED:
-            verdict = VerdictEnum.PARTIALLY_SUPPORTED
-            verdict_strength = min(verdict_strength, 0.70)
-            explanation = f"Partially supported: claim overgeneralizes evidence scope. {aggregate_scope_details}. {explanation}"
-
-        # E. Abstract-Only Limitations
+        # Rule 6 — Abstract-Only Limitations
         if is_abstract_only:
             if aggregate_num_status == "missing_in_source" and verdict == VerdictEnum.UNSUPPORTED:
                 verdict = VerdictEnum.INSUFFICIENT_EVIDENCE
@@ -404,7 +416,10 @@ class ClaimVerificationEngine:
             retraction_warning=pair.retraction_notice if is_retracted_source else None,
             contradiction_type=contradiction_type,
             needs_human_review=needs_human_review,
-            model_name="gemini-1.5-pro",
+            ai_verdict=ai_verdict.value if ai_verdict else None,
+            override_reason=override_reason,
+            supporting_quotes=supporting_quotes,
+            model_name=model_name,
             verification_method=verification_method,
             warnings=warnings,
         )
