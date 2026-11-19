@@ -2,7 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Navbar, Footer } from '../components/layout/Navbar';
 import { getDocument, getDocumentReport, getDocumentEventsUrl, ApiError } from '../lib/api';
-import { DocumentResponse, DocumentReportResponse, SSEPipelineEvent, VerdictEnum } from '../types';
+import { CiteVerifySSEClient, SSEParsedMessage } from '../lib/sseClient';
+import { DocumentResponse, DocumentReportResponse, ResultResponse, VerdictEnum } from '../types';
 
 interface StageInfo {
   id: string;
@@ -22,6 +23,19 @@ const INITIAL_STAGES: StageInfo[] = [
   { id: 's8_persist', name: 'Persist', status: 'queued', detail: 'Store report & audit' },
 ];
 
+function normalizeStageId(raw: string): string {
+  const lower = (raw || '').toLowerCase().trim();
+  if (lower.startsWith('s1') || lower.includes('parse')) return 's1_parse';
+  if (lower.startsWith('s2') || lower.includes('ref')) return 's2_references';
+  if (lower.startsWith('s3') || lower.includes('claim')) return 's3_claims';
+  if (lower.startsWith('s4') || lower.includes('resolve') || lower.includes('doi')) return 's4_resolve';
+  if (lower.startsWith('s5') || lower.includes('evidence')) return 's5_evidence';
+  if (lower.startsWith('s6') || lower.includes('verify')) return 's6_verify';
+  if (lower.startsWith('s7') || lower.includes('assess')) return 's7_assessment';
+  if (lower.startsWith('s8') || lower.includes('persist') || lower.includes('report')) return 's8_persist';
+  return lower;
+}
+
 export const AnalysisPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -35,10 +49,12 @@ export const AnalysisPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // SSE Stream State
+  // SSE Stream State & Counters
   const [streamStatus, setStreamStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'idle' | 'closed'>('connecting');
-  const [liveEvents, setLiveEvents] = useState<SSEPipelineEvent[]>([]);
-  const seenEventFingerprints = useRef<Set<string>>(new Set());
+  const [liveEvents, setLiveEvents] = useState<SSEParsedMessage[]>([]);
+  const [liveResults, setLiveResults] = useState<ResultResponse[]>([]);
+  const [streamedRefCount, setStreamedRefCount] = useState<number>(0);
+  const [streamedClaimCount, setStreamedClaimCount] = useState<number>(0);
 
   // Stages State
   const [stages, setStages] = useState<StageInfo[]>(INITIAL_STAGES);
@@ -62,6 +78,9 @@ export const AnalysisPage: React.FC = () => {
         return getDocumentReport(id).then((reportData) => {
           if (!isMounted) return;
           setReport(reportData);
+          if (reportData.results && reportData.results.length > 0) {
+            setLiveResults(reportData.results);
+          }
         });
       })
       .catch((err: any) => {
@@ -91,68 +110,93 @@ export const AnalysisPage: React.FC = () => {
         if (isMounted) setIsLoading(false);
       });
 
-    // 2. Connect to native Server-Sent Events (SSE) stream
-    let eventSource: EventSource | null = null;
+    // 2. Connect to robust SSE pipeline stream
+    let sseClient: CiteVerifySSEClient | null = null;
 
     if (!isDemoDocId) {
       try {
         const streamUrl = getDocumentEventsUrl(id);
-        eventSource = new EventSource(streamUrl);
+        sseClient = new CiteVerifySSEClient({
+          url: streamUrl,
+          onOpen: () => {
+            if (!isMounted) return;
+            setStreamStatus('connected');
+          },
+          onStatusChange: (status) => {
+            if (!isMounted) return;
+            setStreamStatus(status);
+          },
+          onMessage: (parsed) => {
+            if (!isMounted) return;
+            setLiveEvents((prev) => [parsed, ...prev.slice(0, 24)]);
+          },
+          onStage: (rawStageId, stageStatus, detail) => {
+            if (!isMounted) return;
+            const normId = normalizeStageId(rawStageId);
 
-        eventSource.onopen = () => {
-          if (!isMounted) return;
-          setStreamStatus('connected');
-        };
-
-        eventSource.onmessage = (event) => {
-          if (!isMounted) return;
-          try {
-            const data: SSEPipelineEvent = JSON.parse(event.data);
-            const fingerprint = `${data.id || ''}_${data.event || ''}_${data.stage || ''}_${data.message || ''}`;
-
-            if (seenEventFingerprints.current.has(fingerprint)) {
-              return; // Duplicate event prevented
-            }
-            seenEventFingerprints.current.add(fingerprint);
-
-            setLiveEvents((prev) => [data, ...prev.slice(0, 19)]); // Keep latest 20 events
-
-            // Update stage indicators according to backend pipeline events
-            if (data.stage) {
-              setStages((prevStages) =>
-                prevStages.map((st) => {
-                  if (st.id === data.stage) {
-                    if (data.event === 'stage_completed' || data.event_type === 'stage_completed') {
-                      return { ...st, status: 'done', detail: data.message || 'Completed' };
-                    }
-                    if (data.event === 'error' || data.event_type === 'error') {
-                      return { ...st, status: 'error', detail: data.message || 'Error encountered' };
-                    }
-                    return { ...st, status: 'active', detail: data.message || 'In progress' };
-                  }
-                  return st;
-                })
+            setStages((prevStages) =>
+              prevStages.map((st) => {
+                if (st.id === normId || st.name.toLowerCase() === rawStageId.toLowerCase()) {
+                  return {
+                    ...st,
+                    status: stageStatus,
+                    detail: detail || (stageStatus === 'done' ? 'Completed' : stageStatus === 'error' ? 'Error encountered' : 'In progress'),
+                  };
+                }
+                return st;
+              })
+            );
+          },
+          onReference: (refData) => {
+            if (!isMounted) return;
+            setStreamedRefCount((c) => {
+              const updated = c + 1;
+              setStages((prev) =>
+                prev.map((s) => (s.id === 's2_references' ? { ...s, status: 'active', detail: `${updated} citations resolved` } : s))
               );
+              return updated;
+            });
+          },
+          onClaim: (claimData) => {
+            if (!isMounted) return;
+            setStreamedClaimCount((c) => {
+              const updated = c + 1;
+              setStages((prev) =>
+                prev.map((s) => (s.id === 's3_claims' ? { ...s, status: 'active', detail: `${updated} claims extracted` } : s))
+              );
+              return updated;
+            });
+          },
+          onResult: (resultData) => {
+            if (!isMounted) return;
+            if (resultData && resultData.id) {
+              setLiveResults((prev) => {
+                if (prev.some((r) => r.id === resultData.id)) return prev;
+                return [resultData, ...prev];
+              });
             }
+          },
+          onDone: () => {
+            if (!isMounted) return;
+            setStages((prev) =>
+              prev.map((s) => ({ ...s, status: s.status === 'error' ? 'error' : 'done' }))
+            );
+            // Refresh aggregated report once pipeline signals done
+            getDocumentReport(id)
+              .then((fresh) => {
+                if (isMounted) setReport(fresh);
+              })
+              .catch(() => {});
+          },
+          onError: (errData) => {
+            if (!isMounted) return;
+            console.warn("Pipeline SSE reported error event:", errData);
+          },
+        });
 
-            if (data.stage === 'idle') {
-              setStreamStatus('idle');
-            }
-          } catch (e) {
-            console.error("Failed to parse SSE payload:", e);
-          }
-        };
-
-        eventSource.onerror = () => {
-          if (!isMounted) return;
-          if (eventSource?.readyState === EventSource.CONNECTING) {
-            setStreamStatus('reconnecting');
-          } else if (eventSource?.readyState === EventSource.CLOSED) {
-            setStreamStatus('closed');
-          }
-        };
+        sseClient.connect();
       } catch (e) {
-        console.warn("Failed to initialize SSE EventSource:", e);
+        console.warn("Failed to initialize SSE client:", e);
         setStreamStatus('closed');
       }
     } else {
@@ -172,8 +216,8 @@ export const AnalysisPage: React.FC = () => {
 
     return () => {
       isMounted = false;
-      if (eventSource) {
-        eventSource.close();
+      if (sseClient) {
+        sseClient.close();
       }
     };
   }, [id, isDemoDocId, isDemoQuery]);
@@ -426,9 +470,9 @@ export const AnalysisPage: React.FC = () => {
                   </div>
 
                   {/* Honest Representation of Real Verification State */}
-                  {report && report.results && report.results.length > 0 ? (
+                  {liveResults.length > 0 ? (
                     <div className="flex flex-col gap-space-sm">
-                      {report.results.map((res) => (
+                      {liveResults.map((res) => (
                         <div key={res.id} className="w-full bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col gap-space-xs border border-outline-variant/20">
                           <div className="flex items-start justify-between gap-space-sm">
                             <div className="flex-1 min-w-0">
@@ -459,6 +503,8 @@ export const AnalysisPage: React.FC = () => {
                         </p>
                         <p className="font-body-sm text-sm text-on-surface-variant leading-relaxed">
                           This manuscript is registered in CiteVerify (status: <code className="font-code-sm text-on-surface">{doc?.status || 'pending'}</code>).
+                          {streamedRefCount > 0 ? ` Extracted ${streamedRefCount} references.` : ''}
+                          {streamedClaimCount > 0 ? ` Extracted ${streamedClaimCount} assertions.` : ''}
                           {report?.status_note ? ` ${report.status_note}` : ' Automated verification results will appear as pipeline workers execute.'}
                         </p>
                       </div>

@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar, Footer } from '../components/layout/Navbar';
-import { createDocument, seedDemoDocument, ApiError } from '../lib/api';
-
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
-const ALLOWED_EXTENSIONS = ['.pdf', '.docx'];
+import {
+  uploadDocumentFile,
+  validateManuscriptFile,
+  createDocument,
+  seedDemoDocument,
+  ApiError,
+} from '../lib/api';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -12,29 +15,22 @@ export const LandingPage: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [registrationNotice, setRegistrationNotice] = useState<{
+    documentId: string;
+    title: string;
+    message: string;
+  } | null>(null);
 
   // Single claim form state
   const [claimText, setClaimText] = useState('');
   const [refInput, setRefInput] = useState('');
 
-  const validateFile = (file: File): string | null => {
-    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!ALLOWED_EXTENSIONS.includes(extension)) {
-      return `Unsupported file format (${extension || 'unknown'}). Only PDF and DOCX files are supported.`;
-    }
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      return `File size (${sizeMB} MB) exceeds the 20 MB limit. Please select a smaller manuscript.`;
-    }
-    return null;
-  };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const validationError = validateFile(file);
-      if (validationError) {
-        setErrorMessage(validationError);
+      const validation = validateManuscriptFile(file);
+      if (!validation.valid) {
+        setErrorMessage(validation.error || 'Invalid file format.');
         setSelectedFile(null);
       } else {
         setSelectedFile(file);
@@ -47,9 +43,9 @@ export const LandingPage: React.FC = () => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      const validationError = validateFile(file);
-      if (validationError) {
-        setErrorMessage(validationError);
+      const validation = validateManuscriptFile(file);
+      if (!validation.valid) {
+        setErrorMessage(validation.error || 'Invalid file format.');
         setSelectedFile(null);
       } else {
         setSelectedFile(file);
@@ -67,9 +63,9 @@ export const LandingPage: React.FC = () => {
   const handleSubmitFile = async () => {
     if (!selectedFile || isSubmitting) return;
 
-    const validationError = validateFile(selectedFile);
-    if (validationError) {
-      setErrorMessage(validationError);
+    const validation = validateManuscriptFile(selectedFile);
+    if (!validation.valid) {
+      setErrorMessage(validation.error || 'Invalid file format.');
       return;
     }
 
@@ -77,13 +73,24 @@ export const LandingPage: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      // Connect to real backend: POST /api/documents
-      const doc = await createDocument({
-        title: selectedFile.name,
-      });
+      // Connect through configurable upload readiness abstraction
+      const uploadResult = await uploadDocumentFile(selectedFile);
 
-      // Real document mode: navigate directly to analysis with actual document ID
-      navigate(`/documents/${doc.id}/analysis`);
+      if (uploadResult.isBinaryUploaded) {
+        // Binary upload succeeded: navigate to analysis
+        navigate(`/documents/${uploadResult.document.id}/analysis`);
+      } else {
+        // Metadata-only fallback:
+        // Clearly state that only metadata was registered,
+        // do not claim manuscript was uploaded, and do not start analysis.
+        setSelectedFile(null);
+        setRegistrationNotice({
+          documentId: uploadResult.document.id,
+          title: uploadResult.document.title,
+          message:
+            'Manuscript metadata registered. Note: The backend currently supports document metadata registration only (POST /api/documents). Binary manuscript upload (PDF/DOCX) is not yet supported by the backend pipeline, so manuscript analysis was not started.',
+        });
+      }
     } catch (err: any) {
       console.error("Document upload/registration failed:", err);
       let userMsg = "Failed to upload document. Please ensure the CiteVerify backend server is running.";
@@ -214,6 +221,32 @@ export const LandingPage: React.FC = () => {
                     type="button"
                     onClick={() => setErrorMessage(null)}
                     className="text-on-error-container/70 hover:text-on-error-container shrink-0 p-1 rounded hover:bg-error-container/80 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                </div>
+              )}
+
+              {registrationNotice && (
+                <div className="p-4 bg-surface-container-high border border-outline-variant/40 text-on-surface rounded-lg text-sm flex items-start justify-between gap-3 shadow-xs animate-fadeIn">
+                  <div className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-[22px] text-primary shrink-0 mt-0.5">info</span>
+                    <div className="flex flex-col text-on-surface">
+                      <span className="font-semibold text-primary">Metadata Registered (Binary Upload Pending)</span>
+                      <p className="text-[13px] text-on-surface-variant mt-1 leading-relaxed">
+                        {registrationNotice.message}
+                      </p>
+                      <div className="flex items-center gap-2 mt-2 pt-1 border-t border-outline-variant/20 text-xs font-code-sm text-on-surface-variant">
+                        <span>Document ID: <strong className="text-on-surface">{registrationNotice.documentId}</strong></span>
+                        <span>•</span>
+                        <span>Title: <strong className="text-on-surface">{registrationNotice.title}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationNotice(null)}
+                    className="text-on-surface-variant hover:text-on-surface shrink-0 p-1 rounded hover:bg-surface-container transition-colors"
                   >
                     <span className="material-symbols-outlined text-[18px]">close</span>
                   </button>

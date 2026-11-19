@@ -316,7 +316,22 @@ export const ResultsPage: React.FC = () => {
   const insufficientCount = report?.results_summary?.insufficient_evidence ?? results.filter((r) => r.verdict === VerdictEnum.INSUFFICIENT_EVIDENCE).length;
 
   const totalResultsCount = report?.total_results ?? results.length;
+  const isPartialReport = (report?.total_claims || 0) > totalResultsCount && totalResultsCount > 0;
   const calcPercent = (count: number) => (totalResultsCount > 0 ? (count / totalResultsCount) * 100 : 0);
+
+  // Unique References Extracted from Results
+  const uniqueReferences = React.useMemo(() => {
+    const map = new Map<string, any>();
+    for (const res of results) {
+      if (res.reference) {
+        const key = res.reference.id || res.reference.resolved_doi || res.reference.raw_citation;
+        if (!map.has(key)) {
+          map.set(key, res.reference);
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [results]);
 
   return (
     <div className="bg-surface font-body-md text-on-surface antialiased flex flex-col min-h-screen">
@@ -363,6 +378,29 @@ export const ResultsPage: React.FC = () => {
             </div>
           )}
 
+          {/* Partial Report In-Progress Banner */}
+          {isPartialReport && (
+            <div className="w-full bg-surface-container-high border border-outline-variant/30 rounded-xl p-space-md flex items-start justify-between gap-space-sm shadow-xs mb-4">
+              <div className="flex items-start gap-space-sm">
+                <span className="material-symbols-outlined text-primary text-[22px] shrink-0 mt-0.5 animate-spin">progress_activity</span>
+                <div className="flex flex-col text-sm text-on-surface">
+                  <span className="font-semibold text-primary">Partial Verification Report</span>
+                  <span className="text-[13px] text-on-surface-variant mt-0.5">
+                    {totalResultsCount} of {report?.total_claims} assertions audited. Remaining assertions are being verified by the backend pipeline.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate(`/documents/${id}/analysis`)}
+                className="px-3 py-1 bg-surface text-primary rounded text-xs font-semibold hover:bg-surface-container transition-colors shrink-0 flex items-center gap-1 border border-outline-variant/20 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[14px]">sync</span>
+                View Live Stream
+              </button>
+            </div>
+          )}
+
           {/* Header Context */}
           <section className="py-space-md flex flex-col md:flex-row md:items-center justify-between gap-space-md">
             <div className="flex flex-wrap items-center gap-space-sm min-w-0">
@@ -381,11 +419,21 @@ export const ResultsPage: React.FC = () => {
                   </>
                 )}
               </div>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm rounded-DEFAULT uppercase tracking-wider font-semibold">
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 font-label-sm text-label-sm rounded-DEFAULT uppercase tracking-wider font-semibold ${
+                isPartialReport
+                  ? "bg-amber-500/20 text-amber-900"
+                  : totalResultsCount > 0
+                  ? "bg-secondary-fixed text-on-secondary-fixed"
+                  : "bg-surface-container-high text-on-surface-variant"
+              }`}>
                 <span className="material-symbols-outlined text-[14px]">
-                  {totalResultsCount > 0 ? "verified" : "hourglass_empty"}
+                  {isPartialReport ? "sync" : totalResultsCount > 0 ? "verified" : "hourglass_empty"}
                 </span>
-                {totalResultsCount > 0 ? "Audit Complete" : `Status: ${report?.document.status || "Pending"}`}
+                {isPartialReport
+                  ? `In Progress (${totalResultsCount}/${report?.total_claims})`
+                  : totalResultsCount > 0
+                  ? "Audit Complete"
+                  : `Status: ${report?.document.status || "Pending"}`}
               </span>
             </div>
 
@@ -969,31 +1017,45 @@ export const ResultsPage: React.FC = () => {
           {/* REFERENCES TAB */}
           {activeTab === 'references' && (
             <section className="mt-space-md bg-surface-container-lowest rounded-xl p-space-lg shadow-sm border border-outline-variant/30">
-              <h2 className="font-headline-sm text-headline-sm text-on-surface mb-space-md">
-                Extracted Bibliography & DOI Resolution
-              </h2>
-              {results.length > 0 ? (
+              <div className="flex items-center justify-between mb-space-md">
+                <h2 className="font-headline-sm text-headline-sm text-on-surface">
+                  Extracted Bibliography & DOI Resolution
+                </h2>
+                <span className="font-code-sm text-xs text-on-surface-variant">
+                  {uniqueReferences.length} unique references resolved
+                </span>
+              </div>
+              {uniqueReferences.length > 0 ? (
                 <div className="flex flex-col divide-y divide-outline-variant/20">
-                  {results.map((res, i) => (
-                    <div key={res.id} className="py-space-md flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <span className="font-code-sm text-code-sm text-primary font-semibold block">
-                          [{i + 1}] {res.reference?.resolved_title || res.reference?.citation_key || "Reference Entry"}
+                  {uniqueReferences.map((ref, i) => (
+                    <div key={ref.id || i} className="py-space-md flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="font-code-sm text-code-sm text-primary font-semibold block truncate">
+                          [{i + 1}] {ref.resolved_title || ref.citation_key || "Reference Entry"}
                         </span>
                         <p className="font-body-md text-body-md text-on-surface-variant mt-0.5">
-                          {res.reference?.raw_citation || "No raw citation text available."}
+                          {ref.raw_citation || "No raw citation text available."}
                         </p>
+                        {(ref.resolved_venue || ref.resolved_year) && (
+                          <div className="flex items-center gap-2 mt-1 text-xs text-on-surface-variant font-code-sm">
+                            {ref.resolved_venue && <span>{ref.resolved_venue}</span>}
+                            {ref.resolved_venue && ref.resolved_year && <span>•</span>}
+                            {ref.resolved_year && <span>{ref.resolved_year}</span>}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        {res.reference?.resolved_doi ? (
+                        {ref.resolved_doi ? (
                           <span className="font-code-sm text-code-sm text-primary">
-                            doi:{res.reference.resolved_doi}
+                            doi:{ref.resolved_doi}
                           </span>
                         ) : (
-                          <span className="font-code-sm text-code-sm text-outline">Unresolved DOI</span>
+                          <span className="font-code-sm text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
+                            Unresolved DOI
+                          </span>
                         )}
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-secondary font-label-sm text-label-sm">
-                          Verified
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-secondary font-label-sm text-label-sm font-semibold">
+                          {ref.resolution_confidence ? `${(ref.resolution_confidence * 100).toFixed(0)}% match` : 'Indexed'}
                         </span>
                       </div>
                     </div>
@@ -1001,7 +1063,9 @@ export const ResultsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="p-8 text-center text-on-surface-variant text-sm">
-                  No references extracted yet. References will appear here once Stage 2 (s2_references) executes.
+                  {report?.total_references && report.total_references > 0
+                    ? `${report.total_references} citations detected in the manuscript. Detailed reference metadata will display once verification evidence resolution completes.`
+                    : 'No references extracted yet. References will appear here once Stage 2 (s2_references) executes.'}
                 </div>
               )}
             </section>
