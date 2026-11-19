@@ -1,59 +1,66 @@
 """Stage 5: Evidence Retrieval.
 
-Future Responsibility:
-Obtain source text (full text or abstract) of the cited reference and locate relevant paragraphs.
-Retrieve evidence snippets matching the semantic context of the claiming paper.
-
-Supported source types:
-- 'full_text_available': Open-access full text retrieved from arXiv, PubMed Central, or publisher.
-- 'abstract_only': Paywalled or unavailable full text; abstract retrieved via metadata API.
-- 'unavailable': Metadata or paper unreachable.
-
-TODO:
-- Fetch open access PDF via Unpaywall / arXiv / PubMed Central.
-- Parse cited PDF or fallback to abstract text.
-- Run vector or BM25 retrieval to isolate top-k relevant candidate evidence snippets.
+Obtains source text (open-access full text or abstract) of cited references,
+chunks documents with section and page awareness, and retrieves top-k relevant
+passages using BM25 lexical ranking.
 """
 
-from typing import List, Optional
-from pydantic import BaseModel
+import logging
+from typing import List
+
 from app.models.schemas import EvidenceAvailabilityEnum
+from app.stages.s5_evidence.bm25 import BM25Retriever
+from app.stages.s5_evidence.chunker import DocumentPassage, chunk_document_text
+from app.stages.s5_evidence.models import (
+    EvidencePassageItem,
+    RetrievedEvidenceItem,
+    S5EvidenceInput,
+    S5EvidenceOutput,
+)
+from app.stages.s5_evidence.retriever import EvidenceRetrievalEngine, evidence_retrieval_engine
+from app.stages.s5_evidence.source_loader import SourceDocumentLoader, source_loader
 
+logger = logging.getLogger("citeverify.stages.s5_evidence")
 
-class RetrievedEvidenceItem(BaseModel):
-    citation_key: str
-    evidence_text: str
-    section_title: Optional[str] = None
-    page_number: Optional[int] = None
-    source_type: EvidenceAvailabilityEnum
-    retrieval_score: float = 0.0
-
-
-class S5EvidenceInput(BaseModel):
-    document_id: str
-    resolved_references: List[dict]
-    claims: List[dict]
-
-
-class S5EvidenceOutput(BaseModel):
-    document_id: str
-    evidence_items: List[RetrievedEvidenceItem]
+__all__ = [
+    "S5EvidenceInput",
+    "S5EvidenceOutput",
+    "EvidencePassageItem",
+    "RetrievedEvidenceItem",
+    "EvidenceAvailabilityEnum",
+    "EvidenceRetrievalEngine",
+    "evidence_retrieval_engine",
+    "BM25Retriever",
+    "chunk_document_text",
+    "DocumentPassage",
+    "SourceDocumentLoader",
+    "source_loader",
+    "run_stage_5",
+]
 
 
 async def run_stage_5(input_data: S5EvidenceInput) -> S5EvidenceOutput:
-    """Execute Stage 5: Evidence Retrieval skeleton entrypoint."""
-    # SKELETON PLACEHOLDER
-    return S5EvidenceOutput(
-        document_id=input_data.document_id,
-        evidence_items=[
-            RetrievedEvidenceItem(
-                citation_key="[1]",
-                evidence_text="We propose the Transformer, a model architecture eschewing recurrence and instead relying entirely on an attention mechanism to draw global dependencies between input and output.",
-                section_title="Abstract",
-                page_number=1,
-                source_type=EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
-                retrieval_score=0.92,
-            )
-        ],
-    )
+    """Execute Stage 5: Evidence Retrieval pipeline entrypoint."""
+    doc_id = input_data.document_id
+    resolved_refs = input_data.resolved_references or []
+    claims = input_data.claims or []
+    logger.info(f"Executing Stage 5 evidence retrieval for doc {doc_id} ({len(claims)} claims, {len(resolved_refs)} references)")
 
+    if not claims:
+        return S5EvidenceOutput(
+            document_id=doc_id,
+            evidence_items=[],
+            total_retrieved=0,
+            full_text_count=0,
+            abstract_count=0,
+            unavailable_count=0,
+            warnings=["No claims provided to Stage 5."],
+        )
+
+    output = await evidence_retrieval_engine.retrieve_evidence_for_claims(
+        document_id=doc_id,
+        resolved_references=resolved_refs,
+        claims=claims,
+        top_k=2,
+    )
+    return output
