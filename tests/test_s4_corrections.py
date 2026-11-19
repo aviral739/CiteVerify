@@ -122,6 +122,9 @@ class MockCrossrefAndOpenAlexClient(ScholarlyAPIClient):
     async def search_openalex_by_title(self, title: str):
         return None
 
+    async def search_crossref_by_title(self, title: str):
+        return None
+
 
 # ---------------- 1. Exact Title Match ----------------
 @pytest.mark.asyncio

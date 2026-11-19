@@ -87,6 +87,9 @@ class MockScholarlyClient(ScholarlyAPIClient):
             }
         return None
 
+    async def search_crossref_by_title(self, title: str):
+        return None
+
 
 @pytest.fixture(autouse=True)
 def reset_cache():

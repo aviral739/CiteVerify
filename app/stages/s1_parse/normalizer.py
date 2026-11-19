@@ -77,8 +77,8 @@ def normalize_academic_text(text: str) -> str:
             or re.match(r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", l)
             for l in raw_lines
         )
-        if has_structural_line or len(raw_lines) == 1:
-            cleaned_paragraphs.append("\n".join(raw_lines))
+        if has_structural_line:
+            cleaned_paragraphs.append("\n".join(re.sub(r"[ \t]+", " ", l) for l in raw_lines))
         else:
             cleaned_para = " ".join(raw_lines)
             cleaned_para = re.sub(r"[ \t]+", " ", cleaned_para)
