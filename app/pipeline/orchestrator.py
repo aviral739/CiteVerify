@@ -94,16 +94,57 @@ class VerificationOrchestrator:
             job_registry.update_stage(job_id, "s5_evidence", 62.5)
             s5_out = await run_stage_5(S5EvidenceInput(
                 document_id=document_id,
-                resolved_references=[r.model_dump() for r in s4_out.resolved_references],
+                resolved_references=[r.model_dump() if hasattr(r, "model_dump") else r for r in s4_out.resolved_references],
                 claims=[c.model_dump() for c in s3_out.claims]
             ))
             executed_stages.append("s5_evidence")
 
             # Stage 6: Claim Verification
             job_registry.update_stage(job_id, "s6_verify", 75.0)
+
+            # Map S4 resolved references by citation_key or id using stable identifiers
+            resolved_ref_map = {}
+            for ref in s4_out.resolved_references:
+                ref_dict = ref.model_dump() if hasattr(ref, "model_dump") else dict(ref)
+                if ref_dict.get("citation_key"):
+                    resolved_ref_map[ref_dict["citation_key"].strip()] = ref_dict
+                if ref_dict.get("id"):
+                    resolved_ref_map[ref_dict["id"].strip()] = ref_dict
+
+            # Enrich claims with S4 metadata (DOI, year, retraction status) without title-based guessing
+            enriched_claims = []
+            for c in s3_out.claims:
+                c_dict = c.model_dump() if hasattr(c, "model_dump") else dict(c)
+                matched_ref = None
+                if c_dict.get("reference_id") and c_dict["reference_id"] in resolved_ref_map:
+                    matched_ref = resolved_ref_map[c_dict["reference_id"]]
+                elif c_dict.get("citation_key") and c_dict["citation_key"] in resolved_ref_map:
+                    matched_ref = resolved_ref_map[c_dict["citation_key"]]
+                elif c_dict.get("all_citation_keys"):
+                    for ck in c_dict["all_citation_keys"]:
+                        if ck in resolved_ref_map:
+                            matched_ref = resolved_ref_map[ck]
+                            break
+
+                if matched_ref:
+                    if matched_ref.get("doi"):
+                        c_dict["reference_doi"] = matched_ref["doi"]
+                    if matched_ref.get("year"):
+                        c_dict["reference_year"] = matched_ref["year"]
+                    if matched_ref.get("title"):
+                        c_dict["reference_title"] = matched_ref["title"]
+                    if "is_retracted" in matched_ref:
+                        c_dict["is_retracted"] = matched_ref["is_retracted"]
+                    if matched_ref.get("retraction_notice"):
+                        c_dict["retraction_notice"] = matched_ref["retraction_notice"]
+                enriched_claims.append(c_dict)
+
             s6_out = await run_stage_6(S6VerifyInput(
                 document_id=document_id,
-                claims_with_evidence=[e.model_dump() for e in s5_out.evidence_items]
+                claims=enriched_claims,
+                evidences=[e.model_dump() for e in s5_out.evidence_items],
+                claims_with_evidence=[e.model_dump() for e in s5_out.evidence_items],
+                resolved_references=[r.model_dump() if hasattr(r, "model_dump") else r for r in s4_out.resolved_references]
             ))
             executed_stages.append("s6_verify")
 
