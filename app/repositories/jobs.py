@@ -33,6 +33,9 @@ class JobRepository(BaseRepository[Job]):
         await self.add(job)
         return job
 
+    # Alias for compatibility
+    create = create_job
+
     async def get_by_document(self, document_id: str) -> List[Job]:
         """Fetch all jobs for a given document ordered by creation date."""
         stmt = select(Job).where(Job.document_id == document_id).order_by(Job.created_at.desc())

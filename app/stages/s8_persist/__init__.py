@@ -1,36 +1,48 @@
-"""Stage 8: Persistence.
+"""Stage 8: Persistence Engine.
 
-Future Responsibility:
-Commit all extracted claims, references, retrieved evidence snippets, verification results,
-and generated document reports into the relational database.
-Emit audit logs and final completion events.
-
-TODO:
-- Persist structured records atomically using SQLAlchemy sessions.
-- Trigger final completion notification events.
+Coordinates relational database persistence of all extracted, resolved,
+retrieved, and verified artifacts across Stages S1 through S7 using official repositories.
 """
 
-from typing import Any, Dict
-from pydantic import BaseModel
+import logging
+from typing import Optional, Union
+
+from app.stages.s8_persist.engine import PersistenceEngine, persistence_engine
+from app.stages.s8_persist.models import (
+    LegacyS8PersistInput,
+    S8PersistInput,
+    S8PersistOutput,
+    adapt_legacy_input,
+)
+
+logger = logging.getLogger("citeverify.stages.s8_persist")
+
+__all__ = [
+    "S8PersistInput",
+    "LegacyS8PersistInput",
+    "S8PersistOutput",
+    "PersistenceEngine",
+    "persistence_engine",
+    "adapt_legacy_input",
+    "run_stage_8",
+]
 
 
-class S8PersistInput(BaseModel):
-    document_id: str
-    assessment_data: Dict[str, Any]
+async def run_stage_8(
+    input_data: Union[S8PersistInput, LegacyS8PersistInput],
+    engine: Optional[PersistenceEngine] = None,
+) -> S8PersistOutput:
+    """Execute Stage 8: Persistence.
 
+    Atomically commits outputs from S1–S7 into the database.
+    """
+    if isinstance(input_data, LegacyS8PersistInput):
+        input_data = adapt_legacy_input(input_data)
 
-class S8PersistOutput(BaseModel):
-    document_id: str
-    persisted: bool
-    status: str
-
-
-async def run_stage_8(input_data: S8PersistInput) -> S8PersistOutput:
-    """Execute Stage 8: Persistence skeleton entrypoint."""
-    # SKELETON PLACEHOLDER
-    return S8PersistOutput(
-        document_id=input_data.document_id,
-        persisted=True,
-        status="completed",
+    logger.info(
+        f"Executing Stage 8 persistence for document {input_data.document_id} "
+        f"(job: {input_data.job_id or 'none'})"
     )
 
+    active_engine = engine or persistence_engine
+    return await active_engine.persist_pipeline_outputs(input_data)

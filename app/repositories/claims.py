@@ -42,7 +42,8 @@ class ClaimRepository(BaseRepository[Claim]):
     async def create(
         self,
         document_id: str,
-        claim_text: str,
+        claim_text: Optional[str] = None,
+        text: Optional[str] = None,
         claim_id: Optional[str] = None,
         reference_id: Optional[str] = None,
         context_sentence: Optional[str] = None,
@@ -62,10 +63,11 @@ class ClaimRepository(BaseRepository[Claim]):
         extraction_method: str = "deterministic_rule_based",
     ) -> Claim:
         """Create and stage a single Claim record."""
+        actual_text = claim_text or text or ""
         claim = Claim(
             id=claim_id or generate_uuid(),
             document_id=document_id,
-            claim_text=claim_text,
+            claim_text=actual_text,
             reference_id=reference_id,
             context_sentence=context_sentence,
             section_name=section_name,
@@ -100,6 +102,9 @@ class ClaimRepository(BaseRepository[Claim]):
         )
         self.session.add(assoc)
         return assoc
+
+    # Alias for compatibility with add_reference_association
+    add_reference_association = link_reference
 
     async def link_multiple_references(
         self,

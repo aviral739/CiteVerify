@@ -12,10 +12,15 @@ S8: Persistence
 """
 
 import logging
-from typing import Any, Dict, Optional
-from pydantic import BaseModel
+import uuid
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
+from app.core.db import AsyncSessionLocal
+from app.core.event_bus import event_bus
 from app.core.jobs import job_registry
+from app.repositories.events import EventRepository
+from app.repositories.jobs import JobRepository
 from app.stages.s1_parse import run_stage_1, S1ParseInput
 from app.stages.s2_references import run_stage_2, S2ReferencesInput
 from app.stages.s3_claims import run_stage_3, S3ClaimsInput
@@ -54,6 +59,101 @@ class VerificationOrchestrator:
         ("s8_persist", run_stage_8),
     ]
 
+    async def _emit_stage_progress(self, document_id: str, job_id: str, stage: str, progress: float, message: str) -> None:
+        job_registry.update_stage(job_id, stage, progress)
+        evt_id = str(uuid.uuid4())
+        await event_bus.publish(document_id, {
+            "id": evt_id,
+            "event": "stage",
+            "stage": stage,
+            "document_id": document_id,
+            "job_id": job_id,
+            "message": message,
+            "progress": progress,
+        })
+        try:
+            async with AsyncSessionLocal() as session:
+                job_repo = JobRepository(session)
+                existing = await job_repo.get_by_id(job_id)
+                if existing:
+                    await job_repo.update_progress(job_id, stage=stage, progress=progress, status="running")
+                event_repo = EventRepository(session)
+                await event_repo.append_event(
+                    document_id=document_id,
+                    job_id=job_id,
+                    stage=stage,
+                    event_type="stage",
+                    message=message,
+                    payload={"progress": progress, "stage": stage},
+                    event_id=evt_id,
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.debug(f"Stage progress event persistence skipped for {job_id}: {exc}")
+
+    async def _emit_completion(self, document_id: str, job_id: str) -> None:
+        job_registry.mark_completed(job_id)
+        evt_id = str(uuid.uuid4())
+        await event_bus.publish(document_id, {
+            "id": evt_id,
+            "event": "done",
+            "document_id": document_id,
+            "job_id": job_id,
+            "message": "Verification pipeline completed successfully.",
+            "progress": 100.0,
+        })
+        try:
+            async with AsyncSessionLocal() as session:
+                job_repo = JobRepository(session)
+                existing = await job_repo.get_by_id(job_id)
+                if existing:
+                    await job_repo.mark_completed(job_id)
+                event_repo = EventRepository(session)
+                await event_repo.append_event(
+                    document_id=document_id,
+                    job_id=job_id,
+                    stage="s8_persist",
+                    event_type="done",
+                    message="Verification pipeline completed successfully.",
+                    payload={"progress": 100.0, "status": "completed"},
+                    event_id=evt_id,
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.debug(f"Completion event persistence skipped for {job_id}: {exc}")
+
+    async def _emit_failure(self, document_id: str, job_id: str, stage: str, exc: Exception) -> None:
+        job_registry.mark_failed(job_id, str(exc))
+        evt_id = str(uuid.uuid4())
+        await event_bus.publish(document_id, {
+            "id": evt_id,
+            "event": "error",
+            "stage": stage,
+            "document_id": document_id,
+            "job_id": job_id,
+            "message": str(exc),
+            "fatal": True,
+        })
+        try:
+            async with AsyncSessionLocal() as session:
+                job_repo = JobRepository(session)
+                existing = await job_repo.get_by_id(job_id)
+                if existing:
+                    await job_repo.mark_failed(job_id, error_message=str(exc))
+                event_repo = EventRepository(session)
+                await event_repo.append_event(
+                    document_id=document_id,
+                    job_id=job_id,
+                    stage=stage,
+                    event_type="error",
+                    message=f"Pipeline error at stage {stage}: {exc}",
+                    payload={"error": str(exc), "stage": stage, "fatal": True},
+                    event_id=evt_id,
+                )
+                await session.commit()
+        except Exception as err:
+            logger.debug(f"Failure event persistence skipped for {job_id}: {err}")
+
     async def execute(self, document_id: str, job_id: str, file_path: str = "") -> PipelineExecutionContract:
         """Sequential skeleton execution of pipeline stages.
 
@@ -61,15 +161,18 @@ class VerificationOrchestrator:
         """
         logger.info(f"Starting pipeline orchestration for document {document_id}, job {job_id}")
         executed_stages = []
+        current_stage = "initialization"
 
         try:
             # Stage 1: Parse
-            job_registry.update_stage(job_id, "s1_parse", 12.5)
+            current_stage = "s1_parse"
+            await self._emit_stage_progress(document_id, job_id, "s1_parse", 12.5, "Parsing document sections")
             s1_out = await run_stage_1(S1ParseInput(document_id=document_id, file_path=file_path))
             executed_stages.append("s1_parse")
 
             # Stage 2: Extract References
-            job_registry.update_stage(job_id, "s2_references", 25.0)
+            current_stage = "s2_references"
+            await self._emit_stage_progress(document_id, job_id, "s2_references", 25.0, "Extracting bibliography references")
             s2_out = await run_stage_2(S2ReferencesInput(
                 document_id=document_id,
                 raw_text=s1_out.raw_text,
@@ -78,7 +181,8 @@ class VerificationOrchestrator:
             executed_stages.append("s2_references")
 
             # Stage 3: Extract Claims
-            job_registry.update_stage(job_id, "s3_claims", 37.5)
+            current_stage = "s3_claims"
+            await self._emit_stage_progress(document_id, job_id, "s3_claims", 37.5, "Extracting verifiable claims")
             s3_out = await run_stage_3(S3ClaimsInput(
                 document_id=document_id,
                 sections=s1_out.sections,
@@ -87,7 +191,8 @@ class VerificationOrchestrator:
             executed_stages.append("s3_claims")
 
             # Stage 4: Resolve References
-            job_registry.update_stage(job_id, "s4_resolve", 50.0)
+            current_stage = "s4_resolve"
+            await self._emit_stage_progress(document_id, job_id, "s4_resolve", 50.0, "Resolving references against academic metadata")
             s4_out = await run_stage_4(S4ResolveInput(
                 document_id=document_id,
                 raw_citations=[r.model_dump() for r in s2_out.references]
@@ -95,7 +200,8 @@ class VerificationOrchestrator:
             executed_stages.append("s4_resolve")
 
             # Stage 5: Evidence Retrieval
-            job_registry.update_stage(job_id, "s5_evidence", 62.5)
+            current_stage = "s5_evidence"
+            await self._emit_stage_progress(document_id, job_id, "s5_evidence", 62.5, "Retrieving cited source evidence passages")
             s5_out = await run_stage_5(S5EvidenceInput(
                 document_id=document_id,
                 resolved_references=[r.model_dump() if hasattr(r, "model_dump") else r for r in s4_out.resolved_references],
@@ -104,7 +210,8 @@ class VerificationOrchestrator:
             executed_stages.append("s5_evidence")
 
             # Stage 6: Claim Verification
-            job_registry.update_stage(job_id, "s6_verify", 75.0)
+            current_stage = "s6_verify"
+            await self._emit_stage_progress(document_id, job_id, "s6_verify", 75.0, "Verifying claims against cited evidence")
 
             # Map S4 resolved references by citation_key or id using stable identifiers
             resolved_ref_map = {}
@@ -156,7 +263,8 @@ class VerificationOrchestrator:
             executed_stages.append("s6_verify")
 
             # Stage 7: Assessment
-            job_registry.update_stage(job_id, "s7_assessment", 87.5)
+            current_stage = "s7_assessment"
+            await self._emit_stage_progress(document_id, job_id, "s7_assessment", 87.5, "Synthesizing document verification assessment")
             s7_out = await run_stage_7(S7AssessmentInput(
                 document_id=document_id,
                 results=[r.model_dump() for r in s6_out.results],
@@ -166,14 +274,29 @@ class VerificationOrchestrator:
             executed_stages.append("s7_assessment")
 
             # Stage 8: Persistence
-            job_registry.update_stage(job_id, "s8_persist", 100.0)
+            current_stage = "s8_persist"
+            await self._emit_stage_progress(document_id, job_id, "s8_persist", 95.0, "Persisting verification results to database")
             s8_out = await run_stage_8(S8PersistInput(
                 document_id=document_id,
-                assessment_data=s7_out.model_dump()
+                job_id=job_id,
+                s1_parse=s1_out,
+                s2_references=s2_out,
+                s3_claims=s3_out,
+                s4_resolve=s4_out,
+                s5_evidence=s5_out,
+                s6_verify=s6_out,
+                s7_assessment=s7_out,
             ))
+
+            if not s8_out.persisted or s8_out.status != "completed":
+                raise RuntimeError(
+                    f"Stage 8 persistence failed for document '{document_id}': status='{s8_out.status}'"
+                )
+
             executed_stages.append("s8_persist")
 
-            job_registry.mark_completed(job_id)
+            # Mark 100% completed only AFTER S8 finishes successfully
+            await self._emit_completion(document_id, job_id)
 
             return PipelineExecutionContract(
                 document_id=document_id,
@@ -185,15 +308,15 @@ class VerificationOrchestrator:
             )
 
         except Exception as exc:
-            logger.error(f"Pipeline orchestration error: {exc}", exc_info=True)
-            job_registry.mark_failed(job_id, str(exc))
+            logger.error(f"Pipeline orchestration error at stage '{current_stage}': {exc}", exc_info=True)
+            await self._emit_failure(document_id, job_id, current_stage, exc)
             return PipelineExecutionContract(
                 document_id=document_id,
                 job_id=job_id,
                 status="failed",
                 stages_executed=executed_stages,
                 is_mock_run=True,
-                summary={"error": str(exc)},
+                summary={"error": str(exc), "failed_stage": current_stage},
             )
 
 

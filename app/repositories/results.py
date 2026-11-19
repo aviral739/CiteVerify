@@ -57,6 +57,7 @@ class ResultRepository(BaseRepository[Result]):
         evidence_id: Optional[str] = None,
         reference_id: Optional[str] = None,
         verdict_strength: float = 0.0,
+        confidence: Optional[float] = None,
         retrieval_match: float = 0.0,
         evidence_completeness: str = "unavailable",
         explanation: Optional[str] = None,
@@ -74,13 +75,14 @@ class ResultRepository(BaseRepository[Result]):
         warnings: Optional[List[str]] = None,
     ) -> Result:
         """Create and stage a single Result entity."""
+        final_strength = confidence if confidence is not None else verdict_strength
         res = Result(
             id=result_id or generate_uuid(),
             claim_id=claim_id,
             verdict=verdict,
             evidence_id=evidence_id,
             reference_id=reference_id,
-            verdict_strength=verdict_strength,
+            verdict_strength=final_strength,
             retrieval_match=retrieval_match,
             evidence_completeness=evidence_completeness,
             explanation=explanation,

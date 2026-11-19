@@ -68,6 +68,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     """Initialize database tables and run idempotent migrations."""
+    import app.models.tables  # noqa: F401 - ensure models are registered on Base.metadata
     from app.core.migration import run_migrations
 
     async with engine.begin() as conn:

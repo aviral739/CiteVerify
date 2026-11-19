@@ -67,6 +67,34 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
 
 
+class DocumentUploadResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    document_id: str
+    job_id: str
+    title: str
+    doi: Optional[str] = None
+    authors: Optional[str] = None
+    status: str
+    file_size: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class JobRecordResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    job_id: str
+    document_id: str
+    status: str
+    current_stage: Optional[str] = None
+    progress_percentage: float = 0.0
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class DemoDocumentRequest(BaseModel):
     sample_key: Optional[str] = Field("attention_is_all_you_need", description="Sample key for demo paper")
 

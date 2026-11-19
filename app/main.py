@@ -9,6 +9,7 @@ from app.api.audit import router as audit_router
 from app.api.documents import router as documents_router
 from app.api.events import router as events_router
 from app.api.export import router as export_router
+from app.api.jobs import router as jobs_router
 from app.api.reviews import router as reviews_router
 from app.config import get_settings
 from app.core.db import close_db, init_db
@@ -97,6 +98,7 @@ async def health_check():
 
 # Register API Routers
 app.include_router(documents_router)
+app.include_router(jobs_router)
 app.include_router(events_router)
 app.include_router(reviews_router)
 app.include_router(audit_router)
