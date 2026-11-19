@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.db import Base, get_db
+import app.models.tables  # noqa: F401 - ensure models registered in Base.metadata
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -55,3 +56,32 @@ async def async_client(db_session: AsyncSession) -> AsyncClient:
         yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def protect_gemini_api_quota(request, monkeypatch):
+    """Prevent automated tests from burning user Gemini API quota.
+
+    Permits live API calls only when test is marked with @pytest.mark.live_gemini
+    or when RUN_LIVE_GEMINI=true is set in the environment.
+    """
+    import os
+    if request.node.get_closest_marker("live_gemini"):
+        return
+    if os.getenv("RUN_LIVE_GEMINI", "").lower() in ("true", "1"):
+        return
+    # Tests that explicitly mock httpx.AsyncClient at the network layer don't need _post_generate mocked
+    if "TestGeminiLLMClient" in request.node.nodeid:
+        return
+
+    from app.core.llm import GeminiLLMClient
+
+    async def mock_post(self, payload):
+        return {
+            "_status": "provider_error",
+            "fallback_reason": "provider_error",
+            "error": "Automated test sandbox: live API disabled to conserve quota",
+            "model": self.model,
+        }
+
+    monkeypatch.setattr(GeminiLLMClient, "_post_generate", mock_post)

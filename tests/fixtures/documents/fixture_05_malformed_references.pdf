@@ -1,0 +1,48 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 4 0 R >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+4 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 4 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 2 0 R /F2 3 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 1123 >>
+stream
+BT
+/F2 14 Tf 50 750 Td (Nonlinear Ocean Circulation Feedbacks Under Global Warming Scenarios) Tj
+/F2 11 Tf 50 728 Td (Abstract) Tj
+/F1 10 Tf 50 712 Td (Thermohaline circulation collapse exhibits bistability in coupled general circulation models [1]. Freshening of the North Atlantic suppresses deep convection [2].) Tj
+/F2 11 Tf 50 698 Td (Results) Tj
+/F1 10 Tf 50 682 Td (Under an RCP 8.5 greenhouse emission projection, Atlantic meridional overturning circulation decreases by 38 percent by 2100 [3], [4].) Tj
+/F2 11 Tf 50 668 Td (References) Tj
+/F1 10 Tf 50 652 Td ([1] Stommel, H. \(1961\). Thermohaline convection with two stable regimes of flow. Tellus, 13\(2\), 224-230. DOI: 10.3402/tellusa.v13i2.9491) Tj
+/F1 10 Tf 50 638 Td ([2] Rahmstorf, S. Rapid climate change in the North Atlantic. DOI: 10.5555/invalid_doi_syntax#bad_url) Tj
+/F1 10 Tf 50 624 Td ([3] \(Unclosed author bracket: Broecker, W. S. The great ocean conveyor. Oceanography, 4\(2\), 79-89.) Tj
+/F1 10 Tf 50 610 Td ([4] Manabe, S., and Stouffer, R. J. Simulation of abrupt climate change induced by freshwater input. \(Missing venue and year\)) Tj
+ET
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000209 00000 n 
+0000000266 00000 n 
+0000000402 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1577
+%%EOF

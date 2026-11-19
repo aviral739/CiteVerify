@@ -1,9 +1,9 @@
+import type { DocumentReportResponse } from '../types/index.ts';
 import {
-  DocumentReportResponse,
   VerdictEnum,
   EvidenceAvailabilityEnum,
   HumanDecisionEnum,
-} from '../types';
+} from '../types/index.ts';
 
 export const sampleResultsData: DocumentReportResponse = {
   document: {
@@ -28,6 +28,18 @@ export const sampleResultsData: DocumentReportResponse = {
   },
   status_note: "Sample demonstration audit based on Google Stitch design system reference.",
   generated_at: new Date().toISOString(),
+  overall_health_score: 74.5,
+  assessment_verdict: 'moderate_concerns',
+  discrepancies: {
+    numerical_mismatch_count: 2,
+    scope_discrepancy_count: 1,
+    retracted_source_count: 1,
+    outdated_citation_count: 1,
+    human_review_required_count: 3,
+  },
+  executive_summary: "The evaluated manuscript demonstrates moderate citation integrity concerns. While key biochemical claims are supported by primary literature, quantitative disparities were identified in educational intervention claims, and one cited material science reference has been officially retracted.",
+  methodology_notes: "Evaluated using CiteVerify Stage 7 multi-factor heuristic assessment across claim NLI, source freshness, and numeric audits.",
+  limitations_disclaimer: "Heuristic Citation Health Index (0-100). Not a validated probability.",
   results: [
     {
       id: "res-1",
@@ -38,6 +50,9 @@ export const sampleResultsData: DocumentReportResponse = {
       evidence_completeness: EvidenceAvailabilityEnum.ABSTRACT_ONLY,
       explanation: "Verdict: The paper reports improvement in a small pilot group, but no 30% increase.",
       model_name: "gemini-1.5-pro",
+      numerical_consistency: "mismatch",
+      numerical_details: "Claim asserts a 30% improvement; source literature reports an 18.4% improvement in a small pilot group (n = 24).",
+      scope_audit: "consistent",
       created_at: new Date().toISOString(),
       reviews: [],
       claim: {
@@ -74,6 +89,10 @@ export const sampleResultsData: DocumentReportResponse = {
       evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
       explanation: "The cited study has been retracted due to non-replicable diamagnetic response claims.",
       model_name: "gemini-1.5-pro",
+      is_retracted_source: true,
+      retraction_warning: "The cited study has been retracted due to non-replicable diamagnetic response claims (Notice #RW2023-88).",
+      scope_audit: "context_mismatch",
+      scope_details: "Claims room-temperature superconductivity, but independent replications failed under ambient conditions.",
       created_at: new Date().toISOString(),
       reviews: [],
       claim: {
@@ -110,6 +129,8 @@ export const sampleResultsData: DocumentReportResponse = {
       evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
       explanation: "Exact match confirmed against Fig 3B dataset. Dose-dependent extension verified.",
       model_name: "gemini-1.5-pro",
+      numerical_consistency: "exact_match",
+      scope_audit: "consistent",
       created_at: new Date().toISOString(),
       reviews: [
         {
@@ -156,6 +177,10 @@ export const sampleResultsData: DocumentReportResponse = {
       evidence_completeness: EvidenceAvailabilityEnum.ABSTRACT_ONLY,
       explanation: "Value missing: Cited literature does not support 85% threshold, reporting maximum 42% reduction.",
       model_name: "gemini-1.5-pro",
+      numerical_consistency: "mismatch",
+      numerical_details: "Manuscript claims 85% footprint reduction; literature reports 35% to 42% under non-structured sparsity.",
+      scope_audit: "overgeneralized",
+      scope_details: "Oversimplifies pruning efficacy by omitting task-specific degradation constraints.",
       created_at: new Date().toISOString(),
       reviews: [],
       claim: {
@@ -190,6 +215,8 @@ export const sampleResultsData: DocumentReportResponse = {
       evidence_completeness: EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
       explanation: "Superseded by WHO 2024 meta-analysis consensus demonstrating reduced clinical benefit in adults.",
       model_name: "gemini-1.5-pro",
+      scope_audit: "context_mismatch",
+      scope_details: "General population claim unsupported by Cochrane review finding routine supplementation ineffective.",
       created_at: new Date().toISOString(),
       reviews: [],
       claim: {

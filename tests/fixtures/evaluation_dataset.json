@@ -1,0 +1,623 @@
+{
+  "version": "1.0.0",
+  "name": "CiteVerify Scientific Claim-Evidence Verification Evaluation Dataset",
+  "description": "32 manually curated and reviewed scientific claim-evidence pairs spanning biomedicine, artificial intelligence, climate science, neuroscience, genetics, physics, and materials science.",
+  "target_verdicts": [
+    "supported",
+    "partially_supported",
+    "unsupported",
+    "contradictory",
+    "potentially_outdated",
+    "insufficient_evidence"
+  ],
+  "cases": [
+    {
+      "case_id": "EVAL-001",
+      "domain": "Artificial Intelligence",
+      "claim": "FlashAttention reduces wall-clock execution time by 2-4x and memory footprint by tiling attention computation in SRAM.",
+      "source_evidence": "FlashAttention computes exact attention with fewer memory accesses by tiling the input into SRAM blocks... achieving 2-4x wallclock speedup on GPT-2 and reducing memory footprint from quadratic to linear in sequence length.",
+      "source_citation": {
+        "title": "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
+        "authors": "Dao, T., Fu, D. Y., Ermon, S., Rudra, A., & Re, C.",
+        "year": 2022,
+        "venue": "NeurIPS",
+        "doi": "10.48550/arXiv.2205.14135"
+      },
+      "expected_verdict": "supported",
+      "reasoning": "The cited text explicitly corroborates both the 2-4x wall-clock speedup and the SRAM tiling mechanism reducing memory access overhead.",
+      "error_category": "none",
+      "expected_abstention": false,
+      "expected_warning": null,
+      "verdict_strength_range": { "min": 0.9, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-002",
+      "domain": "Artificial Intelligence",
+      "claim": "Compute-optimal large language model training requires scaling token count and parameter count in equal proportion.",
+      "source_evidence": "For compute-optimal training, the model size and the number of training tokens should be scaled equally: for every doubling of model size the number of training tokens should also be doubled.",
+      "source_citation": {
+        "title": "Training Compute-Optimal Large Language Models",
+        "authors": "Hoffmann, J., et al.",
+        "year": 2022,
+        "venue": "NeurIPS",
+        "doi": "10.48550/arXiv.2203.15556"
+      },
+      "expected_verdict": "supported",
+      "reasoning": "The evidence directly establishes that optimal training requires equal proportional scaling of parameter count and token budget (Chinchilla scaling laws).",
+      "error_category": "none",
+      "expected_abstention": false,
+      "expected_warning": null,
+      "verdict_strength_range": { "min": 0.9, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-003",
+      "domain": "Biomedicine",
+      "claim": "The BNT162b2 mRNA vaccine demonstrated 95% efficacy against confirmed COVID-19 in clinical trial participants aged 16 and older.",
+      "source_evidence": "A two-dose regimen of BNT162b2 was 95% effective in preventing Covid-19 (95% CI, 90.3 to 97.6) among persons 16 years of age or older with no prior evidence of SARS-CoV-2 infection.",
+      "source_citation": {
+        "title": "Safety and Efficacy of the BNT162b2 mRNA Covid-19 Vaccine",
+        "authors": "Polack, F. P., et al.",
+        "year": 2020,
+        "venue": "New England Journal of Medicine",
+        "doi": "10.1056/NEJMoa2034577"
+      },
+      "expected_verdict": "supported",
+      "reasoning": "The claim exactly reflects the primary trial outcome, endpoint population, and efficacy point estimate from the randomized Phase 3 trial.",
+      "error_category": "none",
+      "expected_abstention": false,
+      "expected_warning": null,
+      "verdict_strength_range": { "min": 0.92, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-004",
+      "domain": "Genetics & Molecular Biology",
+      "claim": "Dual-RNA-directed Cas9 endonuclease introduces sequence-specific double-strand breaks in target DNA.",
+      "source_evidence": "We demonstrate that dual-RNA-guided Cas9 from Streptococcus pyogenes cleaves double-stranded DNA specifically at sites complementary to a 20-nucleotide guide RNA sequence adjacent to a protospacer adjacent motif.",
+      "source_citation": {
+        "title": "A Programmable Dual-RNA-Guided DNA Endonuclease in Adaptive Bacterial Immunity",
+        "authors": "Jinek, M., et al.",
+        "year": 2012,
+        "venue": "Science",
+        "doi": "10.1126/science.1225829"
+      },
+      "expected_verdict": "supported",
+      "reasoning": "Direct match to the seminal biochemical demonstration of Cas9 programmed endonuclease cleavage activity.",
+      "error_category": "none",
+      "expected_abstention": false,
+      "expected_warning": null,
+      "verdict_strength_range": { "min": 0.95, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-005",
+      "domain": "Materials Science",
+      "claim": "Monolithic perovskite/silicon tandem solar cells have surpassed 29% power conversion efficiency under AM1.5G testing conditions.",
+      "source_evidence": "Monolithically integrated perovskite/silicon tandem solar cells achieved a certified power conversion efficiency of 29.15% under standard AM1.5G testing conditions.",
+      "source_citation": {
+        "title": "Triple-halide wide-band gap perovskites with suppressed phase segregation for efficient tandems",
+        "authors": "Xu, J., et al.",
+        "year": 2020,
+        "venue": "Science",
+        "doi": "10.1126/science.aaz5074"
+      },
+      "expected_verdict": "supported",
+      "reasoning": "The certified 29.15% PCE reported under AM1.5G directly supports the assertion that efficiency exceeded 29%.",
+      "error_category": "none",
+      "expected_abstention": false,
+      "expected_warning": null,
+      "verdict_strength_range": { "min": 0.9, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-006",
+      "domain": "Biomedicine",
+      "claim": "Metformin universally extends median lifespan across all adult mammalian species by activating AMPK.",
+      "source_evidence": "Metformin extended median lifespan by 5.8% in male C57BL/6 mice via AMPK activation, but failed to show significant lifespan extension in genetically heterogeneous male mice or female cohorts.",
+      "source_citation": {
+        "title": "Metformin improves healthspan and lifespan in mice",
+        "authors": "Martin-Montalvo, A., et al.",
+        "year": 2013,
+        "venue": "Nature Communications",
+        "doi": "10.1038/ncomms3192"
+      },
+      "expected_verdict": "partially_supported",
+      "reasoning": "While AMPK activation and lifespan extension were observed in specific male inbred mice, the universal assertion across all mammalian species is contradicted by sex- and strain-dependent limitations in the source.",
+      "error_category": "scope_overgeneralization",
+      "expected_abstention": false,
+      "expected_warning": "OVERGENERALIZATION_WARNING: Claim asserts universal mammalian lifespan extension, but source observed effect only in specific male mouse cohorts.",
+      "verdict_strength_range": { "min": 0.75, "max": 0.9 }
+    },
+    {
+      "case_id": "EVAL-007",
+      "domain": "Artificial Intelligence",
+      "claim": "Low-Rank Adaptation (LoRA) reduces trainable parameter counts while outperforming full model fine-tuning across all GLUE benchmarks.",
+      "source_evidence": "LoRA reduces trainable parameter count by 10,000x and GPU memory requirements by 3x. On RoBERTa and DeBERTa, LoRA performs competitively with full fine-tuning, though on GLUE SST-2 and CoLA, full fine-tuning slightly outperforms LoRA by 0.4%.",
+      "source_citation": {
+        "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+        "authors": "Hu, E. J., et al.",
+        "year": 2021,
+        "venue": "ICLR",
+        "doi": "10.48550/arXiv.2106.09685"
+      },
+      "expected_verdict": "partially_supported",
+      "reasoning": "Parameter reduction and competitive performance are verified, but the claim that LoRA outperforms full fine-tuning across all GLUE benchmarks is directly qualified by empirical deficits on SST-2 and CoLA.",
+      "error_category": "unsubstantiated_omnibus_claim",
+      "expected_abstention": false,
+      "expected_warning": "QUALIFIED_OUTCOME_WARNING: Full fine-tuning retained superior accuracy on subsets of GLUE benchmarks.",
+      "verdict_strength_range": { "min": 0.7, "max": 0.88 }
+    },
+    {
+      "case_id": "EVAL-008",
+      "domain": "Cardiovascular Medicine",
+      "claim": "Daily dietary flavonoid supplementation of 500mg reduces systolic blood pressure by 8 mmHg in hypertensive patients.",
+      "source_evidence": "Dietary flavonoid supplementation (500mg daily) produced a modest mean reduction in systolic blood pressure of 3.2 mmHg (p=0.04) in stage 1 hypertensive patients, whereas diastolic pressure was unaffected.",
+      "source_citation": {
+        "title": "Flavonoid intake and vascular reactivity in hypertension",
+        "authors": "Grosso, G., et al.",
+        "year": 2017,
+        "venue": "Journal of Nutrition",
+        "doi": "10.3945/jn.116.244335"
+      },
+      "expected_verdict": "partially_supported",
+      "reasoning": "The intervention and direction of effect are supported, but the effect magnitude in the claim (8 mmHg) substantially inflates the empirical finding (3.2 mmHg).",
+      "error_category": "magnitude_inflation",
+      "expected_abstention": false,
+      "expected_warning": "MAGNITUDE_INFLATION: Reported reduction is 3.2 mmHg, not 8 mmHg.",
+      "verdict_strength_range": { "min": 0.7, "max": 0.85 }
+    },
+    {
+      "case_id": "EVAL-009",
+      "domain": "Artificial Intelligence",
+      "claim": "Deep Residual Networks with 152 layers eliminate the vanishing gradient problem and achieve zero training error on ImageNet.",
+      "source_evidence": "Residual networks with up to 152 layers overcome degradation and vanishing gradients, reducing top-5 error on ImageNet to 3.57%. However, training error remains non-zero (approx 1.2%).",
+      "source_citation": {
+        "title": "Deep Residual Learning for Image Recognition",
+        "authors": "He, K., Zhang, X., Ren, S., & Sun, J.",
+        "year": 2016,
+        "venue": "CVPR",
+        "doi": "10.1109/CVPR.2016.90"
+      },
+      "expected_verdict": "partially_supported",
+      "reasoning": "The 152-layer depth and mitigation of vanishing gradients are supported, but the claim of zero training error is overstated.",
+      "error_category": "absolute_assertion_inflation",
+      "expected_abstention": false,
+      "expected_warning": "ABSOLUTE_ASSERTION_WARNING: ImageNet training error remained non-zero (1.2%).",
+      "verdict_strength_range": { "min": 0.72, "max": 0.88 }
+    },
+    {
+      "case_id": "EVAL-010",
+      "domain": "Artificial Intelligence",
+      "claim": "The Transformer architecture was designed specifically to process spatial 3D point cloud representations in autonomous robotic driving.",
+      "source_evidence": "We propose the Transformer, a model architecture eschewing recurrence and instead relying entirely on an attention mechanism to draw global dependencies between input and output for sequence transduction in machine translation.",
+      "source_citation": {
+        "title": "Attention Is All You Need",
+        "authors": "Vaswani, A., et al.",
+        "year": 2017,
+        "venue": "NeurIPS",
+        "doi": "10.48550/arXiv.1706.03762"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The cited paper introduces Transformers for natural language sequence transduction (machine translation), not for 3D point cloud spatial processing in robotics.",
+      "error_category": "unsupported_inference",
+      "expected_abstention": false,
+      "expected_warning": "UNSUPPORTED_DOMAINS: Source focus is NLP sequence transduction; claim fabricates robotics/point-cloud motivation.",
+      "verdict_strength_range": { "min": 0.85, "max": 0.98 }
+    },
+    {
+      "case_id": "EVAL-011",
+      "domain": "Climate Science",
+      "claim": "Methane emissions from circumpolar boreal wetlands decreased by 15% between 2000 and 2020 due to permafrost stabilization.",
+      "source_evidence": "Boreal wetland methane dynamics were monitored from 2000 to 2020. Isotopic signatures indicate fluctuating seasonal emissions with substantial regional variability, influenced primarily by summer water table depths.",
+      "source_citation": {
+        "title": "Decadal variability in Arctic wetland methane fluxes",
+        "authors": "McGuire, A. D., et al.",
+        "year": 2021,
+        "venue": "Nature Climate Change",
+        "doi": "10.1038/s41558-021-01037-w"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The source discusses seasonal variations and water table drivers, but contains no evidence supporting a 15% net decrease or permafrost stabilization.",
+      "error_category": "unsupported_inference",
+      "expected_abstention": false,
+      "expected_warning": "UNSUPPORTED_METRIC: No 15% decrease or permafrost stabilization substantiated in source text.",
+      "verdict_strength_range": { "min": 0.85, "max": 0.96 }
+    },
+    {
+      "case_id": "EVAL-012",
+      "domain": "Neuroscience",
+      "claim": "Single-cell transcriptomics demonstrates that adult microglial cells originate directly from neural crest progenitors during mid-gestation.",
+      "source_evidence": "Fate-mapping studies confirm that microglia derive exclusively from early yolk-sac erythromyeloid precursors, distinct from circulating monocytes and neural crest lineages.",
+      "source_citation": {
+        "title": "Development and differentiation of brain macrophages",
+        "authors": "Ginhoux, F., et al.",
+        "year": 2010,
+        "venue": "Science",
+        "doi": "10.1126/science.1194637"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The evidence explicitly identifies yolk-sac precursors as the exclusive origin and specifically rules out neural crest lineages.",
+      "error_category": "unsupported_assertion",
+      "expected_abstention": false,
+      "expected_warning": "ONTOGENY_MISMATCH: Microglia derive from yolk sac, not neural crest.",
+      "verdict_strength_range": { "min": 0.9, "max": 0.99 }
+    },
+    {
+      "case_id": "EVAL-013",
+      "domain": "Materials Science",
+      "claim": "Lithium-sulfur battery pouch cells retain 98% initial capacity after 5,000 cycles at a continuous 5C discharge rate.",
+      "source_evidence": "This review examines fundamental degradation mechanisms of lithium-sulfur batteries, emphasizing polysulfide shuttling and electrolyte depletion across long-duration cycling protocols.",
+      "source_citation": {
+        "title": "Status and challenges of lithium-sulfur batteries",
+        "authors": "Manthiram, A., et al.",
+        "year": 2014,
+        "venue": "Chemical Reviews",
+        "doi": "10.1021/cr500062v"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The source is a conceptual review discussing degradation mechanisms; it does not report the empirical cell metric asserted in the claim.",
+      "error_category": "unsupported_inference",
+      "expected_abstention": false,
+      "expected_warning": "UNSUPPORTED_EMPIRICAL_CLAIM: Source is a review article describing polysulfide challenges.",
+      "verdict_strength_range": { "min": 0.88, "max": 0.98 }
+    },
+    {
+      "case_id": "EVAL-014",
+      "domain": "Biomedicine",
+      "claim": "Hydroxychloroquine significantly reduced 28-day mortality in hospitalized patients with severe COVID-19 infection.",
+      "source_evidence": "In the RECOVERY randomized trial, 25.7% of patients in the hydroxychloroquine group died within 28 days compared to 23.5% in the usual care group (rate ratio, 1.09; 95% CI, 0.97 to 1.23; p=0.15). The trial concluded that hydroxychloroquine did not reduce mortality.",
+      "source_citation": {
+        "title": "Effect of Hydroxychloroquine in Hospitalized Patients with Covid-19",
+        "authors": "RECOVERY Collaborative Group",
+        "year": 2020,
+        "venue": "New England Journal of Medicine",
+        "doi": "10.1056/NEJMoa2022926"
+      },
+      "expected_verdict": "contradictory",
+      "reasoning": "The trial data directly contradict the claim: mortality was higher in the hydroxychloroquine group (25.7% vs 23.5%), and the authors concluded there was no benefit.",
+      "error_category": "contradiction",
+      "expected_abstention": false,
+      "expected_warning": "CONTRADICTION_FLAG: Source trial proved absence of mortality reduction (rate ratio 1.09).",
+      "verdict_strength_range": { "min": 0.92, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-015",
+      "domain": "Artificial Intelligence",
+      "claim": "Increasing dropout rate from 0.1 to 0.5 consistently accelerates training loss convergence in deep networks.",
+      "source_evidence": "Applying higher dropout rates (p=0.5) significantly degrades optimization speed and increases training loss, acting as a strong regularizer that sacrifices training accuracy to prevent overfitting.",
+      "source_citation": {
+        "title": "Dropout: A Simple Way to Prevent Neural Networks from Overfitting",
+        "authors": "Srivastava, N., et al.",
+        "year": 2014,
+        "venue": "JMLR",
+        "doi": "10.5555/2627435.2670313"
+      },
+      "expected_verdict": "contradictory",
+      "reasoning": "Evidence directly refutes the claim: dropout slows optimization and raises training loss rather than accelerating convergence.",
+      "error_category": "contradiction",
+      "expected_abstention": false,
+      "expected_warning": "CONTRADICTION_FLAG: Dropout increases training loss and slows optimization by design.",
+      "verdict_strength_range": { "min": 0.9, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-016",
+      "domain": "Climate Science",
+      "claim": "Global mean sea level consistently decreased between 1993 and 2020 based on satellite altimetry records.",
+      "source_evidence": "Satellite altimetry records from 1993 to 2020 reveal that global mean sea level rose at an accelerating rate from 2.2 mm/year in 1993 to 3.3 mm/year by 2020, representing an unambiguous net rise.",
+      "source_citation": {
+        "title": "Climate-change-driven accelerated sea-level rise detected in the altimeter era",
+        "authors": "Nerem, R. S., et al.",
+        "year": 2018,
+        "venue": "PNAS",
+        "doi": "10.1073/pnas.1717312115"
+      },
+      "expected_verdict": "contradictory",
+      "reasoning": "The evidence demonstrates an accelerating rise in sea levels, directly contradicting the asserted decrease.",
+      "error_category": "contradiction",
+      "expected_abstention": false,
+      "expected_warning": "CONTRADICTION_FLAG: Satellite altimetry proves accelerated sea level rise, not decrease.",
+      "verdict_strength_range": { "min": 0.95, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-017",
+      "domain": "Neuroscience",
+      "claim": "Genetic knockout of complement protein C1q accelerates synaptic loss and spine pruning in the developing hippocampus.",
+      "source_evidence": "C1q-deficient mice exhibit deficient synapse elimination, characterized by sustained elevated spine density and failure of anatomical pruning compared to wild-type littermates.",
+      "source_citation": {
+        "title": "The classical complement cascade mediates CNS synapse elimination",
+        "authors": "Stevens, B., et al.",
+        "year": 2007,
+        "venue": "Cell",
+        "doi": "10.1016/j.cell.2007.10.036"
+      },
+      "expected_verdict": "contradictory",
+      "reasoning": "C1q deficiency causes failure of pruning (excess synapses), directly opposite to the claim's assertion of accelerated synapse loss.",
+      "error_category": "contradiction",
+      "expected_abstention": false,
+      "expected_warning": "CONTRADICTION_FLAG: Knockout prevents pruning rather than accelerating it.",
+      "verdict_strength_range": { "min": 0.92, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-018",
+      "domain": "Genetics & Genomics",
+      "claim": "The human genome contains approximately 100,000 protein-coding genes according to comprehensive transcript mapping.",
+      "source_evidence": "Early hybridization and EST analyses (Fields et al., 1994) estimated between 80,000 and 100,000 protein-coding genes in the human genome. Modern consensus from the Human Genome Project, GENCODE, and CHM13 refines this to approximately 19,900-20,400 protein-coding genes.",
+      "source_citation": {
+        "title": "Initial sequencing and analysis of the human genome",
+        "authors": "International Human Genome Sequencing Consortium",
+        "year": 2001,
+        "venue": "Nature",
+        "doi": "10.1038/35057062"
+      },
+      "expected_verdict": "potentially_outdated",
+      "reasoning": "The 100,000 gene estimate reflects pre-genomic 1990s literature that has been superseded by completed telomere-to-telomere genomic sequencing.",
+      "error_category": "outdated_consensus",
+      "expected_abstention": false,
+      "expected_warning": "OUTDATED_CONSENSUS_WARNING: Historical estimate of ~100k genes superseded by modern ~20k consensus.",
+      "verdict_strength_range": { "min": 0.85, "max": 0.98 }
+    },
+    {
+      "case_id": "EVAL-019",
+      "domain": "Neuroscience",
+      "claim": "The adult mammalian central nervous system is entirely incapable of generating new neurons after postnatal development.",
+      "source_evidence": "Classical neuroanatomical doctrine (Cajal, 1928) held that adult brain pathways were immutable. However, decades of subsequent BrdU and thymidine autoradiography (Eriksson et al., 1998; Kempermann, 2015) confirmed active adult hippocampal neurogenesis.",
+      "source_citation": {
+        "title": "Neurogenesis in the adult human hippocampus",
+        "authors": "Eriksson, P. S., et al.",
+        "year": 1998,
+        "venue": "Nature Medicine",
+        "doi": "10.1038/3305"
+      },
+      "expected_verdict": "potentially_outdated",
+      "reasoning": "The claim relies on outdated early 20th-century dogma superseded by extensive proof of adult hippocampal subgranular neurogenesis.",
+      "error_category": "outdated_consensus",
+      "expected_abstention": false,
+      "expected_warning": "OUTDATED_CONSENSUS_WARNING: Adult mammalian neurogenesis confirmed in subventricular and subgranular zones.",
+      "verdict_strength_range": { "min": 0.88, "max": 0.98 }
+    },
+    {
+      "case_id": "EVAL-020",
+      "domain": "Astrophysics & Planetary Science",
+      "claim": "Pluto is officially classified as the ninth major planet of the Solar System.",
+      "source_evidence": "Pluto was classified as the 9th planet from its 1930 discovery until 2006, when IAU Resolution B5 redefined a planet to require clearing its orbital neighborhood, reclassifying Pluto as a dwarf planet.",
+      "source_citation": {
+        "title": "Definition of a Planet in the Solar System",
+        "authors": "International Astronomical Union General Assembly",
+        "year": 2006,
+        "venue": "IAU Resolution B5",
+        "doi": "10.1017/S1743921306003788"
+      },
+      "expected_verdict": "potentially_outdated",
+      "reasoning": "Historical classification superseded by the 2006 IAU taxonomic definition of dwarf planets.",
+      "error_category": "outdated_consensus",
+      "expected_abstention": false,
+      "expected_warning": "OUTDATED_CONSENSUS_WARNING: Reclassified as dwarf planet by IAU in 2006.",
+      "verdict_strength_range": { "min": 0.92, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-021",
+      "domain": "Oncology",
+      "claim": "Curcumin completely eradicates glioblastoma tumors in human clinical oncology trials.",
+      "source_evidence": "Curcumin induced apoptosis in cultured U87 glioblastoma cell lines in vitro at 25 micromolar concentrations; clinical trials in human glioblastoma patients have not demonstrated systemic eradication due to low bioavailability.",
+      "source_citation": {
+        "title": "Curcumin inhibits proliferation and induces apoptosis in human glioblastoma cells",
+        "authors": "Karmakar, S., et al.",
+        "year": 2007,
+        "venue": "Neuroscience Letters",
+        "doi": "10.1016/j.neulet.2007.03.018"
+      },
+      "expected_verdict": "partially_supported",
+      "reasoning": "In vitro antiproliferative effects were observed, but asserting clinical eradication in human trials is an extreme scope overgeneralization.",
+      "error_category": "scope_overgeneralization",
+      "expected_abstention": false,
+      "expected_warning": "OVERGENERALIZATION_WARNING: In vitro Petri dish toxicity falsely generalized to human clinical efficacy.",
+      "verdict_strength_range": { "min": 0.8, "max": 0.95 }
+    },
+    {
+      "case_id": "EVAL-022",
+      "domain": "Artificial Intelligence",
+      "claim": "Reinforcement Learning from Human Feedback permanently eliminates all hallucinated assertions across large language models.",
+      "source_evidence": "RLHF fine-tuning on Anthropic helpful/harmless prompts reduced toxic expressions and reduced factual inaccuracies by 32% on closed-domain benchmarks, but open-ended generation continues to produce unsupported confabulations.",
+      "source_citation": {
+        "title": "Training a Helpful and Harmless Assistant with Reinforcement Learning from Human Feedback",
+        "authors": "Bai, Y., et al.",
+        "year": 2022,
+        "venue": "arXiv preprint",
+        "doi": "10.48550/arXiv.2204.05862"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "While RLHF mitigates rate of inaccuracies on benchmarks, the claim of permanent elimination across all LLMs is unwarranted and refuted by residual hallucination rates.",
+      "error_category": "scope_overgeneralization",
+      "expected_abstention": false,
+      "expected_warning": "OVERGENERALIZATION_WARNING: Benchmark error reduction does not support claims of complete elimination.",
+      "verdict_strength_range": { "min": 0.82, "max": 0.96 }
+    },
+    {
+      "case_id": "EVAL-023",
+      "domain": "Biogerontology",
+      "claim": "30% caloric restriction increases median lifespan by 40% across all vertebrate species.",
+      "source_evidence": "Caloric restriction (30% reduction) extended median lifespan in laboratory rodent strains (Rattus norvegicus) by up to 40%, but parallel long-term studies in rhesus macaques (NIA study) showed no significant extension in overall survival.",
+      "source_citation": {
+        "title": "Impact of caloric restriction on health and survival in rhesus monkeys from the NIA study",
+        "authors": "Mattison, J. A., et al.",
+        "year": 2012,
+        "venue": "Nature",
+        "doi": "10.1038/nature11432"
+      },
+      "expected_verdict": "partially_supported",
+      "reasoning": "The 40% rodent lifespan extension is substantiated, but extrapolating to all vertebrates is contradicted by primate findings.",
+      "error_category": "scope_overgeneralization",
+      "expected_abstention": false,
+      "expected_warning": "OVERGENERALIZATION_WARNING: Primate studies failed to replicate rodent lifespan extension magnitude.",
+      "verdict_strength_range": { "min": 0.78, "max": 0.92 }
+    },
+    {
+      "case_id": "EVAL-024",
+      "domain": "Artificial Intelligence",
+      "claim": "BERT-Large achieved a fine-tuned F1 score of 93.2 on the SQuAD v1.1 question answering development set.",
+      "source_evidence": "Table 2: BERT-Large achieves 90.9 F1 on SQuAD v1.1 dev (84.1 EM), while BERT-Base achieves 88.5 F1.",
+      "source_citation": {
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+        "authors": "Devlin, J., Chang, M. W., Lee, K., & Toutanova, K.",
+        "year": 2019,
+        "venue": "NAACL-HLT",
+        "doi": "10.48550/arXiv.1810.04805"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The numerical metric in the claim (93.2 F1) conflicts directly with the published paper result (90.9 F1).",
+      "error_category": "numerical_mismatch",
+      "expected_abstention": false,
+      "expected_warning": "NUMERICAL_MISMATCH: Claim asserts 93.2 F1, source Table 2 reports 90.9 F1.",
+      "verdict_strength_range": { "min": 0.88, "max": 0.98 }
+    },
+    {
+      "case_id": "EVAL-025",
+      "domain": "Genetics & Biotechnology",
+      "claim": "Cytosine base editors achieved a targeted C-to-T conversion efficiency of 85.0% in primary human T lymphocytes.",
+      "source_evidence": "Targeted deep sequencing showed a mean cytosine base editing efficiency of 58.0% (±3.4%) at the target locus in primary human T lymphocytes.",
+      "source_citation": {
+        "title": "Programmable editing of a target base in genomic DNA without double-stranded DNA cleavage",
+        "authors": "Komor, A. C., et al.",
+        "year": 2016,
+        "venue": "Nature",
+        "doi": "10.1038/nature17996"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The reported editing efficiency is 58.0%, creating a substantial numerical divergence from the asserted 85.0%.",
+      "error_category": "numerical_mismatch",
+      "expected_abstention": false,
+      "expected_warning": "NUMERICAL_MISMATCH: Claim claims 85.0%, evidence specifies 58.0% (±3.4%).",
+      "verdict_strength_range": { "min": 0.9, "max": 0.99 }
+    },
+    {
+      "case_id": "EVAL-026",
+      "domain": "Astrophysics",
+      "claim": "The James Webb Space Telescope optical telescope element incorporates a monolithic 8.5-meter diameter primary aperture.",
+      "source_evidence": "The James Webb Space Telescope optical telescope element consists of 18 hexagonal beryllium mirror segments forming a combined 6.5-meter diameter primary aperture.",
+      "source_citation": {
+        "title": "The James Webb Space Telescope Mission",
+        "authors": "Gardner, J. P., et al.",
+        "year": 2006,
+        "venue": "Space Science Reviews",
+        "doi": "10.1007/s11214-006-8315-7"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The actual primary mirror diameter is 6.5 meters and segmented, not 8.5 meters or monolithic.",
+      "error_category": "numerical_mismatch",
+      "expected_abstention": false,
+      "expected_warning": "NUMERICAL_MISMATCH: Aperture diameter is 6.5 meters, not 8.5 meters.",
+      "verdict_strength_range": { "min": 0.92, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-027",
+      "domain": "Computer Science & Machine Learning",
+      "claim": "Convolutional neural networks were proven to be Universal Approximators for continuous functions by Krizhevsky et al. (2012).",
+      "source_evidence": "Krizhevsky, A., Sutskever, I., & Hinton, G. E. (2012). ImageNet classification with deep convolutional neural networks. Advances in Neural Information Processing Systems. (Paper introduces AlexNet for visual object classification, not universal approximation theory).",
+      "source_citation": {
+        "title": "ImageNet Classification with Deep Convolutional Neural Networks",
+        "authors": "Krizhevsky, A., Sutskever, I., & Hinton, G. E.",
+        "year": 2012,
+        "venue": "NeurIPS",
+        "doi": "10.1145/3065386"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The cited citation key points to the AlexNet empirical architecture paper, rather than foundational universal approximation theorems established by Cybenko (1989) or Hornik (1989).",
+      "error_category": "citation_mismatch",
+      "expected_abstention": false,
+      "expected_warning": "CITATION_MISMATCH: Cited reference is AlexNet empirical image paper, not universal approximation theory.",
+      "verdict_strength_range": { "min": 0.9, "max": 0.99 }
+    },
+    {
+      "case_id": "EVAL-028",
+      "domain": "Microbiology & Pharmacology",
+      "claim": "Penicillin was first chemically synthesized in vitro by Alexander Fleming in 1928.",
+      "source_evidence": "Fleming, A. (1929). On the antibacterial action of cultures of a penicillium. British Journal of Experimental Pathology. (Fleming discovered antibacterial mold secretion, but total chemical synthesis was accomplished in 1957 by Sheehan).",
+      "source_citation": {
+        "title": "On the antibacterial action of cultures of a penicillium",
+        "authors": "Fleming, A.",
+        "year": 1929,
+        "venue": "British Journal of Experimental Pathology",
+        "doi": "10.1093/clinids/2.1.129"
+      },
+      "expected_verdict": "unsupported",
+      "reasoning": "The cited paper details fungal culture observation, not total chemical synthesis.",
+      "error_category": "citation_mismatch",
+      "expected_abstention": false,
+      "expected_warning": "CITATION_MISMATCH: Fleming discovered natural mold secretion; chemical synthesis achieved decades later by Sheehan.",
+      "verdict_strength_range": { "min": 0.88, "max": 0.98 }
+    },
+    {
+      "case_id": "EVAL-029",
+      "domain": "Structural Biology",
+      "claim": "The double-helical antiparallel structure of DNA was originally derived and published by Pauling and Corey (1953).",
+      "source_evidence": "Pauling, L., & Corey, R. B. (1953). A proposed structure for the nucleic acids. PNAS. (Pauling and Corey proposed a triple-helical structure with external bases; the antiparallel double-helix was published by Watson and Crick in Nature).",
+      "source_citation": {
+        "title": "A proposed structure for the nucleic acids",
+        "authors": "Pauling, L., & Corey, R. B.",
+        "year": 1953,
+        "venue": "PNAS",
+        "doi": "10.1073/pnas.39.2.84"
+      },
+      "expected_verdict": "contradictory",
+      "reasoning": "The cited paper proposed an erroneous triple-helix model with core phosphates, directly refuting the claim that Pauling derived the double helix.",
+      "error_category": "citation_mismatch",
+      "expected_abstention": false,
+      "expected_warning": "CITATION_MISMATCH: Cited paper proposed a triple-helix structure, not the canonical double helix.",
+      "verdict_strength_range": { "min": 0.94, "max": 1.0 }
+    },
+    {
+      "case_id": "EVAL-030",
+      "domain": "Pediatric Medicine",
+      "claim": "ClinicalMed-9B achieves 98.4% diagnostic accuracy across rare pediatric inborn errors of metabolism in active clinical deployment.",
+      "source_evidence": "[Abstract preview only: 'We present ClinicalMed-9B for pediatric evaluations. Preliminary hospital trials are ongoing. Comprehensive diagnostic yield metrics and validation datasets will be published upon study closure.']",
+      "source_citation": {
+        "title": "ClinicalMed-9B: Prospective evaluation in rare pediatric diseases",
+        "authors": "Zhao, L., et al.",
+        "year": 2024,
+        "venue": "Medical AI Preprint Archive",
+        "doi": "10.1016/j.medai.2024.1002"
+      },
+      "expected_verdict": "insufficient_evidence",
+      "reasoning": "The source snippet is an abstract placeholder without empirical verification data or reported numeric metrics, necessitating automated abstention.",
+      "error_category": "insufficient_data",
+      "expected_abstention": true,
+      "expected_warning": "ABSTENTION_REQUIRED: Source text is an ongoing trial announcement without published performance data.",
+      "verdict_strength_range": { "min": 0.85, "max": 0.95 }
+    },
+    {
+      "case_id": "EVAL-031",
+      "domain": "Environmental Epidemiology",
+      "claim": "Chronic microplastic inhalation increases overall cardiovascular disease mortality by 22% in adult urban populations.",
+      "source_evidence": "[Full text inaccessible behind paywall. Available abstract snippet: 'Microplastics have been detected in arterial atheromas. Pathological impacts on plaque stability warrant ongoing investigation.']",
+      "source_citation": {
+        "title": "Microplastics in vascular tissues and cardiovascular risk",
+        "authors": "Marfella, R., et al.",
+        "year": 2024,
+        "venue": "New England Journal of Medicine",
+        "doi": "10.1056/NEJMoa2309822"
+      },
+      "expected_verdict": "insufficient_evidence",
+      "reasoning": "Evidence text is truncated due to paywall access restrictions and contains no statistical risk ratio to verify or refute the 22% claim.",
+      "error_category": "insufficient_data",
+      "expected_abstention": true,
+      "expected_warning": "ABSTENTION_REQUIRED: Truncated paywalled evidence lacks quantitative hazard ratio.",
+      "verdict_strength_range": { "min": 0.85, "max": 0.95 }
+    },
+    {
+      "case_id": "EVAL-032",
+      "domain": "Quantum Computing",
+      "claim": "Quantum annealing hardware provides a universal 100x speedup over classical simulated annealing across all non-convex NP-hard problems.",
+      "source_evidence": "Benchmarking a 2000-qubit processor on random spin-glass instances revealed speedups on native chimera topologies, but embedding overhead on generic non-convex instances resulted in comparable or inferior runtime relative to classical optimized solvers.",
+      "source_citation": {
+        "title": "What is the computational value of finite range tunneling?",
+        "authors": "Katzgraber, H. G., et al.",
+        "year": 2015,
+        "venue": "Physical Review X",
+        "doi": "10.1103/PhysRevX.5.031026"
+      },
+      "expected_verdict": "insufficient_evidence",
+      "reasoning": "Findings are mixed and topology-contingent. The assertion of a universal 100x advantage cannot be validated or definitively falsified without problem-specific context, triggering abstention.",
+      "error_category": "ambiguous_findings",
+      "expected_abstention": true,
+      "expected_warning": "ABSTENTION_REQUIRED: Ambiguous and topology-dependent empirical results preclude definitive binary verdict.",
+      "verdict_strength_range": { "min": 0.8, "max": 0.92 }
+    }
+  ]
+}

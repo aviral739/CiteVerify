@@ -1,0 +1,51 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 4 0 R >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+4 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 4 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 2 0 R /F2 3 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 2037 >>
+stream
+BT
+/F2 14 Tf 50 750 Td (Synaptic Pruning Mechanisms in Cortical Development and Neurodegeneration) Tj
+/F2 11 Tf 50 728 Td (Abstract) Tj
+/F1 10 Tf 50 712 Td (Microglial phagocytosis regulates synaptic density during postnatal maturation \(Stevens et al., 2007\). In neurodegenerative models, aberrant reactivation of classical complement cascades triggers premature synapse loss \(Hong et al., 2016\).) Tj
+/F2 11 Tf 50 698 Td (Introduction) Tj
+/F1 10 Tf 50 682 Td (Synaptic elimination is essential for refining neural circuitry \(Stevens et al., 2007\). C1q localizes selectively to immature synapses prior to microglial engulfment \(Bialas and Stevens, 2013\).) Tj
+/F1 10 Tf 50 668 Td (In murine models of Alzheimer's disease, inhibiting C1q preserves synaptic density and cognitive function \(Hong et al., 2016\). High-resolution in vivo imaging confirms that microglial-synapse contact duration predicts elimination \(Paolicelli et al., 2011\).) Tj
+/F2 11 Tf 50 654 Td (Discussion) Tj
+/F1 10 Tf 50 638 Td (These findings establish complement-mediated tagging as a conserved mechanism \(Stevens et al., 2007; Hong et al., 2016\). Therapeutic modulation of microglial receptors may prevent early cognitive decline \(Paolicelli et al., 2011\).) Tj
+/F2 11 Tf 50 624 Td (References) Tj
+/F1 10 Tf 50 608 Td (Bialas, A. R., and Stevens, B. \(2013\). TGF-beta signaling regulates neuronal C1q expression. Nature Neuroscience, 16\(12\), 1773-1782. DOI: 10.1038/nn.3560) Tj
+/F1 10 Tf 50 594 Td (Hong, S., et al. \(2016\). Complement and microglia mediate early synapse loss in Alzheimer mouse models. Science, 352\(6286\), 712-716. DOI: 10.1126/science.aad8373) Tj
+/F1 10 Tf 50 580 Td (Paolicelli, R. C., et al. \(2011\). Synaptic pruning by microglia is necessary for normal brain development. Science, 333\(6048\), 1456-1458. DOI: 10.1126/science.1202529) Tj
+/F1 10 Tf 50 566 Td (Stevens, B., et al. \(2007\). The classical complement cascade mediates CNS synapse elimination. Cell, 131\(6\), 1164-1178. DOI: 10.1016/j.cell.2007.10.036) Tj
+ET
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000209 00000 n 
+0000000266 00000 n 
+0000000402 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+2491
+%%EOF

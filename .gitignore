@@ -41,6 +41,11 @@ htmlcov/
 *.sqlite
 *.sqlite3
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db-shm
+*.db-wal
 
 # Uploads & Runtime Artifacts
 storage/uploads/*

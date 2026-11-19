@@ -67,6 +67,34 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
 
 
+class DocumentUploadResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    document_id: str
+    job_id: str
+    title: str
+    doi: Optional[str] = None
+    authors: Optional[str] = None
+    status: str
+    file_size: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class JobRecordResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    job_id: str
+    document_id: str
+    status: str
+    current_stage: Optional[str] = None
+    progress_percentage: float = 0.0
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class DemoDocumentRequest(BaseModel):
     sample_key: Optional[str] = Field("attention_is_all_you_need", description="Sample key for demo paper")
 
@@ -85,6 +113,13 @@ class ReferenceResponse(BaseModel):
     resolved_year: Optional[int] = None
     resolved_venue: Optional[str] = None
     resolution_confidence: float = 0.0
+    authors: Optional[str] = None
+    is_retracted: Optional[bool] = False
+    retraction_notice: Optional[str] = None
+    doi_title_mismatch: Optional[bool] = False
+    oa_pdf_url: Optional[str] = None
+    is_open_access: Optional[bool] = False
+    availability_state: Optional[str] = "unavailable"
     created_at: datetime
 
 
@@ -156,6 +191,24 @@ class ResultResponse(BaseModel):
     created_at: datetime
     reviews: List[ReviewResponse] = []
 
+    # Enriched UI associations
+    claim: Optional[ClaimResponse] = None
+    reference: Optional[ReferenceResponse] = None
+    evidence_quote: Optional[str] = None
+
+    # Verification dimensions
+    verification_method: Optional[str] = "gemini_assisted"
+    fallback_reason: Optional[str] = None
+    ai_verdict: Optional[str] = None
+    override_reason: Optional[str] = None
+    quote_verified: Optional[bool] = False
+    numerical_consistency: Optional[str] = None
+    numerical_details: Optional[str] = None
+    scope_audit: Optional[str] = None
+    scope_details: Optional[str] = None
+    is_retracted_source: Optional[bool] = False
+    retraction_warning: Optional[str] = None
+
 
 # ---------------- Review Request Schemas ----------------
 
@@ -209,4 +262,5 @@ class ExportResponse(BaseModel):
     document_id: str
     export_format: str
     data: Dict[str, Any]
+    content: Optional[str] = None
 

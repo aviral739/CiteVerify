@@ -1,11 +1,26 @@
-"""Document ingestion, demo bootstrapping, and document report endpoints."""
+"""Document ingestion, upload processing, demo bootstrapping, and document report endpoints."""
 
+import hashlib
+import os
 import uuid
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pathlib import Path
+from typing import List, Optional
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.db import get_db
 from app.core.exceptions import DocumentNotFoundError
 from app.core.jobs import job_registry
@@ -17,23 +32,140 @@ from app.models.schemas import (
     DocumentCreate,
     DocumentReportResponse,
     DocumentResponse,
+    DocumentUploadResponse,
+    ReferenceResponse,
 )
-from app.models.tables import Claim, Document, Job, Reference, Result
+from app.models.tables import Claim, Document, Job, Reference
+from app.pipeline.orchestrator import orchestrator
+from app.repositories.claims import ClaimRepository
+from app.repositories.documents import DocumentRepository
+from app.repositories.jobs import JobRepository
+from app.repositories.references import ReferenceRepository
+from app.repositories.reports import DocumentReportRepository
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+settings = get_settings()
+
+MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
+ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+
+
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(..., description="Manuscript file in PDF or DOCX format"),
+    title: Optional[str] = Form(None, description="Optional manuscript title override"),
+    doi: Optional[str] = Form(None, description="Optional registered DOI"),
+    authors: Optional[str] = Form(None, description="Optional author metadata"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a research manuscript (PDF/DOCX), store securely, and trigger verification."""
+    filename = file.filename or "manuscript.pdf"
+    ext = Path(filename).suffix.lower()
+
+    # 1. Validate file extension
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported format '{ext}'. Only .pdf and .docx files are supported.",
+        )
+
+    # 2. Read bytes and validate size limit
+    content = await file.read()
+    file_size = len(content)
+    if file_size > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File size ({file_size / (1024 * 1024):.1f} MB) exceeds maximum 20 MB limit.",
+        )
+
+    # 3. Store document safely in storage/uploads
+    file_hash = hashlib.sha256(content).hexdigest()
+    upload_dir = settings.UPLOAD_DIR
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_stem = Path(filename).stem.replace(" ", "_")
+    saved_filename = f"{file_hash[:12]}_{safe_stem}{ext}"
+    saved_path = upload_dir / saved_filename
+    with open(saved_path, "wb") as f:
+        f.write(content)
+
+    # 4. Create or reuse document and job records using official repositories
+    doc_id = f"doc-{file_hash[:8]}"
+    job_id = f"job-{file_hash[:8]}"
+
+    human_title = title or Path(filename).stem.replace("_", " ").title()
+
+    doc_repo = DocumentRepository(db)
+    existing_doc = await doc_repo.get_by_id(doc_id)
+    if not existing_doc:
+        doc = await doc_repo.create(
+            document_id=doc_id,
+            title=human_title,
+            doi=doi,
+            authors=authors,
+            file_path=str(saved_path.resolve()),
+            file_hash=file_hash,
+            file_type=ext.lstrip("."),
+            file_size_bytes=file_size,
+            status="processing",
+        )
+    else:
+        existing_doc.status = "processing"
+        existing_doc.file_path = str(saved_path.resolve())
+        doc = existing_doc
+
+    job_repo = JobRepository(db)
+    existing_job = await job_repo.get_by_id(job_id)
+    if not existing_job:
+        await job_repo.create(
+            document_id=doc_id,
+            job_id=job_id,
+            status="running",
+        )
+    else:
+        await job_repo.update_progress(job_id=job_id, stage="s1_parse", progress=10.0, status="running")
+
+    await db.commit()
+    await db.refresh(doc)
+
+    # 5. Register in async job registry
+    job_registry.register(job_id=job_id, document_id=doc_id)
+
+    # 6. Dispatch pipeline orchestrator asynchronously in background task
+    import asyncio
+    asyncio.create_task(
+        orchestrator.execute(
+            document_id=doc_id,
+            job_id=job_id,
+            file_path=str(saved_path.resolve()),
+        )
+    )
+
+    return DocumentUploadResponse(
+        id=doc.id,
+        document_id=doc.id,
+        job_id=job_id,
+        title=doc.title,
+        doi=doc.doi,
+        authors=doc.authors,
+        status=doc.status,
+        file_size=file_size,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+    )
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def create_document(doc_in: DocumentCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new document record for verification."""
-    doc = Document(
-        id=str(uuid.uuid4()),
+    """Create a new document record for verification metadata."""
+    doc_repo = DocumentRepository(db)
+    doc = await doc_repo.create(
         title=doc_in.title,
         doi=doc_in.doi,
         authors=doc_in.authors,
         status="pending",
     )
-    db.add(doc)
     await db.commit()
     await db.refresh(doc)
     return doc
@@ -90,8 +222,8 @@ async def seed_demo_document(req: Optional[DemoDocumentRequest] = None, db: Asyn
 @router.get("/{id}", response_model=DocumentResponse)
 async def get_document(id: str, db: AsyncSession = Depends(get_db)):
     """Retrieve document metadata by ID."""
-    result = await db.execute(select(Document).where(Document.id == id))
-    doc = result.scalar_one_or_none()
+    doc_repo = DocumentRepository(db)
+    doc = await doc_repo.get_by_id(id)
     if not doc:
         raise DocumentNotFoundError(id)
     return doc
@@ -99,35 +231,42 @@ async def get_document(id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{id}/report", response_model=DocumentReportResponse)
 async def get_document_report(id: str, db: AsyncSession = Depends(get_db)):
-    """Retrieve full verification report for document."""
-    result = await db.execute(select(Document).where(Document.id == id))
-    doc = result.scalar_one_or_none()
+    """Retrieve full verification report for document from persistent storage."""
+    report_repo = DocumentReportRepository(db)
+    report = await report_repo.build_document_report(id)
+    if not report:
+        raise DocumentNotFoundError(id)
+    return report
+
+
+@router.get("/{id}/claims", response_model=List[ClaimResponse])
+async def get_document_claims(
+    id: str,
+    active_only: bool = Query(False, description="Filter for active claims only"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve extracted claims for a document."""
+    doc_repo = DocumentRepository(db)
+    doc = await doc_repo.get_by_id(id)
     if not doc:
         raise DocumentNotFoundError(id)
 
-    # Fetch references and claims count
-    ref_res = await db.execute(select(Reference).where(Reference.document_id == id))
-    refs = ref_res.scalars().all()
+    claim_repo = ClaimRepository(db)
+    claims = await claim_repo.get_by_document(id, active_only=active_only)
+    return claims
 
-    claim_res = await db.execute(select(Claim).where(Claim.document_id == id))
-    claims = claim_res.scalars().all()
 
-    return DocumentReportResponse(
-        document=DocumentResponse.model_validate(doc),
-        total_references=len(refs),
-        total_claims=len(claims),
-        total_results=0,
-        results_summary={
-            "supported": 0,
-            "partially_supported": 0,
-            "unsupported": 0,
-            "contradictory": 0,
-            "potentially_outdated": 0,
-            "insufficient_evidence": 0,
-        },
-        results=[],
-        status_note="Document report skeleton ready. Real verification pipeline execution pending.",
-    )
+@router.get("/{id}/references", response_model=List[ReferenceResponse])
+async def get_document_references(id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve resolved bibliography references for a document."""
+    doc_repo = DocumentRepository(db)
+    doc = await doc_repo.get_by_id(id)
+    if not doc:
+        raise DocumentNotFoundError(id)
+
+    ref_repo = ReferenceRepository(db)
+    references = await ref_repo.get_by_document(id)
+    return references
 
 
 @router.patch("/{id}/claims", response_model=ClaimPatchResponse)
@@ -154,4 +293,3 @@ async def update_document_claims(id: str, patch_req: ClaimPatchRequest, db: Asyn
         message=f"Claim '{claim.id}' updated successfully.",
         updated_claim=ClaimResponse.model_validate(claim),
     )
-

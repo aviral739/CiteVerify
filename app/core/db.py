@@ -1,6 +1,7 @@
 """Database engine, session management, and Base model."""
 
 from typing import AsyncGenerator
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -12,12 +13,32 @@ from app.config import get_settings
 
 settings = get_settings()
 
+
+def configure_sqlite_engine(target_engine, busy_timeout_ms: int = 30000, enable_wal: bool = True) -> None:
+    """Attach connection listeners for SQLite PRAGMAs (foreign keys, WAL mode, busy timeout)."""
+    @event.listens_for(target_engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys = ON;")
+            cursor.execute(f"PRAGMA busy_timeout = {busy_timeout_ms};")
+            if enable_wal:
+                cursor.execute("PRAGMA journal_mode = WAL;")
+        except Exception:
+            pass
+        finally:
+            cursor.close()
+
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     future=True,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    connect_args={"check_same_thread": False, "timeout": 30.0} if "sqlite" in settings.DATABASE_URL else {},
 )
+
+if "sqlite" in settings.DATABASE_URL:
+    configure_sqlite_engine(engine)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -46,12 +67,14 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Initialize database tables according to defined metadata."""
+    """Initialize database tables and run idempotent migrations."""
+    import app.models.tables  # noqa: F401 - ensure models are registered on Base.metadata
+    from app.core.migration import run_migrations
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await run_migrations(conn)
 
 
 async def close_db() -> None:
     """Dispose of database engine connections."""
     await engine.dispose()
-
