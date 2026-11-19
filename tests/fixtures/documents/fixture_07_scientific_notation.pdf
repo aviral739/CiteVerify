@@ -1,0 +1,49 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 4 0 R >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+4 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 4 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 2 0 R /F2 3 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 1251 >>
+stream
+BT
+/F2 14 Tf 50 750 Td (Ballistic Carrier Transport in Low-Dimensional Transition Metal Dichalcogenides) Tj
+/F2 11 Tf 50 728 Td (Abstract) Tj
+/F1 10 Tf 50 712 Td (Monolayer WS2 flakes demonstrate high room-temperature electron mobilities exceeding 1.2 x 10^3 cm^2 V^-1 s^-1 [1].) Tj
+/F2 11 Tf 50 698 Td (Physical Characteristics) Tj
+/F1 10 Tf 50 682 Td (The fundamental charge quantum is e = 1.602 x 10^-19 C and electron rest mass is m_e = 9.109 x 10^-31 kg [2].) Tj
+/F1 10 Tf 50 668 Td (Carrier sheet density reached n_s = 4.85 x 10^12 cm^-2 at a gate bias of V_g = +2.5 V [1].) Tj
+/F1 10 Tf 50 654 Td (Phonon scattering lifetime was measured as tau = 2.45 x 10^-13 s at T = 300 K [1].) Tj
+/F1 10 Tf 50 640 Td (Optical bandgap transitions occur at photon energies of 3.28 x 10^-19 J \(2.05 eV\) under vacuum dielectric constant epsilon_0 = 8.854 x 10^-12 F/m [2].) Tj
+/F2 11 Tf 50 626 Td (References) Tj
+/F1 10 Tf 50 610 Td ([1] Radisavljevic, B., et al. \(2011\). Single-layer MoS2 transistors. Nature Nanotechnology, 6\(3\), 147-150. DOI: 10.1038/nnano.2010.279) Tj
+/F1 10 Tf 50 596 Td ([2] Novoselov, K. S., et al. \(2005\). Two-dimensional gas of massless Dirac fermions in graphene. Nature, 438\(7065\), 197-200. DOI: 10.1038/nature04233) Tj
+ET
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000209 00000 n 
+0000000266 00000 n 
+0000000402 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1705
+%%EOF

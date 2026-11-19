@@ -1,0 +1,53 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 4 0 R >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+4 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 4 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 2 0 R /F2 3 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 1744 >>
+stream
+BT
+/F2 14 Tf 50 750 Td (Atmospheric Characterization and Transmission Spectroscopy of Warm Neptunes) Tj
+/F2 11 Tf 50 728 Td (Abstract) Tj
+/F1 10 Tf 50 712 Td (Transmission spectroscopy of transiting exoplanets reveals water vapor absorption bands [1].) Tj
+/F2 11 Tf 50 698 Td (Observational Results) Tj
+/F1 10 Tf 50 682 Td (Table 1 summarizes atmospheric scale heights and observed H2O feature amplitudes across target planets.) Tj
+/F1 9 Tf 50 668 Td (TABLE: Target Name   | Period \(d\) | Mass \(M_J\) | Scale Height \(km\) | Baseline Source) Tj
+/F1 9 Tf 50 655 Td (TABLE: HAT-P-11b     | 4.887      | 0.081      | 210               | Fraine et al. [1]) Tj
+/F1 9 Tf 50 642 Td (TABLE: GJ-436b       | 2.643      | 0.070      | 145               | Knutson et al. [2]) Tj
+/F1 9 Tf 50 629 Td (TABLE: WASP-107b     | 5.721      | 0.096      | 930               | Spake et al. [3]) Tj
+/F1 10 Tf 50 616 Td (As indicated in Table 1, WASP-107b exhibits an anomalously high scale height of 930 km due to its low mean molecular weight [3].) Tj
+/F1 10 Tf 50 602 Td (In contrast, HAT-P-11b displays clear water absorption features corresponding to 3.2 scale heights [1].) Tj
+/F2 11 Tf 50 588 Td (References) Tj
+/F1 10 Tf 50 572 Td ([1] Fraine, J., et al. \(2014\). Water vapour defense in the atmosphere of the warm Neptune HAT-P-11b. Nature, 513\(7519\), 526-529. DOI: 10.1038/nature13785) Tj
+/F1 10 Tf 50 558 Td ([2] Knutson, H. A., et al. \(2014\). A featureless transmission spectrum for the Neptune-mass exoplanet GJ 436b. Nature, 505\(7481\), 66-68. DOI: 10.1038/nature12887) Tj
+/F1 10 Tf 50 544 Td ([3] Spake, J. J., et al. \(2018\). Helium in the eroding atmosphere of an exoplanet. Nature, 557\(7703\), 68-70. DOI: 10.1038/s41586-018-0067-3) Tj
+ET
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000209 00000 n 
+0000000266 00000 n 
+0000000402 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+2198
+%%EOF
