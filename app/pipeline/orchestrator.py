@@ -70,7 +70,11 @@ class VerificationOrchestrator:
 
             # Stage 2: Extract References
             job_registry.update_stage(job_id, "s2_references", 25.0)
-            s2_out = await run_stage_2(S2ReferencesInput(document_id=document_id, raw_text=s1_out.raw_text))
+            s2_out = await run_stage_2(S2ReferencesInput(
+                document_id=document_id,
+                raw_text=s1_out.raw_text,
+                sections=s1_out.sections,
+            ))
             executed_stages.append("s2_references")
 
             # Stage 3: Extract Claims
