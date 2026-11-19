@@ -51,6 +51,21 @@ class JobRepository(BaseRepository[Job]):
             job.status = "running"
         return job
 
+    async def update_progress(
+        self,
+        job_id: str,
+        stage: str,
+        progress: float,
+        status: str = "running",
+    ) -> Optional[Job]:
+        """Update job stage, progress, and status."""
+        job = await self.get_by_id(job_id)
+        if job:
+            job.stage = stage
+            job.progress = progress
+            job.status = status
+        return job
+
     async def mark_completed(self, job_id: str) -> Optional[Job]:
         """Mark job status as completed with 100% progress."""
         job = await self.get_by_id(job_id)
