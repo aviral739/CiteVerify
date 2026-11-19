@@ -156,11 +156,18 @@ class EvidenceRetrievalEngine:
         )
 
     async def _load_reference_passages(self, ref: Dict[str, Any]) -> Any:
-        """Load text from OA PDF if available, otherwise fallback to abstract."""
+        """Load text from normalized source text if available, otherwise OA PDF, otherwise abstract."""
+        full_text = ref.get("full_text") or ref.get("source_text")
         oa_pdf_url = ref.get("oa_pdf_url")
         abstract = ref.get("abstract")
 
-        # 1. Attempt full-text download if OA PDF URL is provided
+        # 1. Pre-fetched or normalized full text (e.g. Europe PMC XML text) without duplicate PDF download
+        if full_text and full_text.strip():
+            passages = chunk_document_text(full_text.strip())
+            source_url = ref.get("url") or oa_pdf_url or (f"https://doi.org/{ref['doi']}" if ref.get("doi") else None)
+            return passages, EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE, source_url
+
+        # 2. Attempt full-text download if OA PDF URL is provided
         if oa_pdf_url:
             pdf_result = await self.loader.fetch_pdf_text(oa_pdf_url)
             if pdf_result:
