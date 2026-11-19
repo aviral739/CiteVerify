@@ -147,7 +147,6 @@ class VerificationOrchestrator:
                 document_id=document_id,
                 claims=enriched_claims,
                 evidences=[e.model_dump() for e in s5_out.evidence_items],
-                claims_with_evidence=[e.model_dump() for e in s5_out.evidence_items],
                 resolved_references=[r.model_dump() if hasattr(r, "model_dump") else r for r in s4_out.resolved_references]
             ))
             executed_stages.append("s6_verify")

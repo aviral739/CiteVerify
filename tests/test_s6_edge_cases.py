@@ -4,6 +4,7 @@ import pytest
 from app.core.llm import BaseLLMClient, LLMResponse
 from app.models.schemas import EvidenceAvailabilityEnum, VerdictEnum
 from app.stages.s6_verify import run_stage_6, S6VerifyInput, ClaimVerificationEngine
+from app.stages.s6_verify import _build_pairs_from_input
 from app.stages.s6_verify.llm_verifier import LLMClaimVerifier
 from app.stages.s6_verify.models import ClaimEvidencePair, EvidencePassage
 
@@ -359,3 +360,274 @@ async def test_abstract_only_llm_failure_conservative_fallback():
     assert result.verdict == VerdictEnum.INSUFFICIENT_EVIDENCE
     assert result.verdict != VerdictEnum.UNSUPPORTED
     assert result.verdict != VerdictEnum.CONTRADICTORY
+
+
+@pytest.mark.asyncio
+async def test_s5_evidence_id_preserved_in_s6():
+    """Verify that the original S5 evidence_id survives into S6 without being re-minted."""
+    evidence_id_orig = "ev-s5-original-uuid-9999"
+    inp = S6VerifyInput(
+        document_id="doc-ev-id-test",
+        claims=[
+            {
+                "id": "c-id-test-1",
+                "claim_text": "Transformer architecture achieves superior translation BLEU score.",
+                "citation_key": "[1]",
+                "reference_id": "ref-vaswani-2017",
+            }
+        ],
+        evidences=[
+            {
+                "evidence_id": evidence_id_orig,
+                "claim_id": "c-id-test-1",
+                "citation_key": "[1]",
+                "reference_id": "ref-vaswani-2017",
+                "evidence_text": "Our model establishes a new state of the art on English-to-German translation.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            }
+        ],
+    )
+
+    pairs = _build_pairs_from_input(inp)
+    assert len(pairs) == 1
+    assert len(pairs[0].evidence_passages) == 1
+    assert pairs[0].evidence_passages[0].evidence_id == evidence_id_orig
+
+    # Run stage 6 and verify in output result
+    out = await run_stage_6(inp)
+    assert len(out.results) == 1
+    assert out.results[0].evidence_id == evidence_id_orig
+
+
+@pytest.mark.asyncio
+async def test_prevent_cross_claim_evidence_contamination():
+    """Verify that two claims citing the same reference receive only their own evidence."""
+    inp = S6VerifyInput(
+        document_id="doc-contamination-test",
+        claims=[
+            {
+                "id": "c-alpha",
+                "claim_text": "Compound X inhibits viral replication in vitro.",
+                "citation_key": "[1]",
+                "reference_id": "ref-smith-2021",
+            },
+            {
+                "id": "c-beta",
+                "claim_text": "Compound X exhibits zero cytotoxic adverse effects at 50 uM.",
+                "citation_key": "[1]",
+                "reference_id": "ref-smith-2021",
+            },
+        ],
+        evidences=[
+            {
+                "evidence_id": "ev-for-alpha",
+                "claim_id": "c-alpha",
+                "citation_key": "[1]",
+                "reference_id": "ref-smith-2021",
+                "evidence_text": "In vitro assays showed Compound X inhibited viral replication by 90%.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            },
+            {
+                "evidence_id": "ev-for-beta",
+                "claim_id": "c-beta",
+                "citation_key": "[1]",
+                "reference_id": "ref-smith-2021",
+                "evidence_text": "Cell viability assays demonstrated no cytotoxicity at concentrations up to 50 uM.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            },
+        ],
+    )
+
+    pairs = _build_pairs_from_input(inp)
+    assert len(pairs) == 2
+
+    pair_alpha = [p for p in pairs if p.claim_id == "c-alpha"][0]
+    pair_beta = [p for p in pairs if p.claim_id == "c-beta"][0]
+
+    # Verify claim alpha ONLY received its own evidence
+    assert len(pair_alpha.evidence_passages) == 1
+    assert pair_alpha.evidence_passages[0].evidence_id == "ev-for-alpha"
+    assert "viral replication" in pair_alpha.evidence_passages[0].evidence_text
+
+    # Verify claim beta ONLY received its own evidence
+    assert len(pair_beta.evidence_passages) == 1
+    assert pair_beta.evidence_passages[0].evidence_id == "ev-for-beta"
+    assert "no cytotoxicity" in pair_beta.evidence_passages[0].evidence_text
+
+
+@pytest.mark.asyncio
+async def test_multiple_passages_for_single_claim_preserved():
+    """Verify multiple evidence passages tagged with the same claim_id are preserved."""
+    inp = S6VerifyInput(
+        document_id="doc-multi-pass-test",
+        claims=[
+            {
+                "id": "c-multi",
+                "claim_text": "Treatment reduced tumor volume by 45% and improved overall 5-year survival.",
+                "citation_key": "[5]",
+                "reference_id": "ref-oncology-2020",
+            }
+        ],
+        evidences=[
+            {
+                "evidence_id": "ev-pass-1",
+                "claim_id": "c-multi",
+                "citation_key": "[5]",
+                "reference_id": "ref-oncology-2020",
+                "evidence_text": "Mean tumor volume was reduced by 45% in the experimental arm (p < 0.01).",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            },
+            {
+                "evidence_id": "ev-pass-2",
+                "claim_id": "c-multi",
+                "citation_key": "[5]",
+                "reference_id": "ref-oncology-2020",
+                "evidence_text": "Overall 5-year survival was significantly higher in the treated cohort.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            },
+        ],
+    )
+
+    pairs = _build_pairs_from_input(inp)
+    assert len(pairs) == 1
+    assert len(pairs[0].evidence_passages) == 2
+    pass_ids = [p.evidence_id for p in pairs[0].evidence_passages]
+    assert "ev-pass-1" in pass_ids
+    assert "ev-pass-2" in pass_ids
+
+    out = await run_stage_6(inp)
+    assert len(out.results) == 1
+    assert out.results[0].evidence_id in ("ev-pass-1", "ev-pass-2")
+
+
+@pytest.mark.asyncio
+async def test_multiple_references_for_single_claim_preserved():
+    """Verify multiple reference associations for a compound claim are preserved."""
+    inp = S6VerifyInput(
+        document_id="doc-multi-ref-test",
+        claims=[
+            {
+                "id": "c-multi-ref",
+                "claim_text": "Findings are corroborated across independent trials.",
+                "reference_id": "ref-trial-A",
+                "all_reference_ids": ["ref-trial-A", "ref-trial-B"],
+                "citation_key": "[1]",
+                "all_citation_keys": ["[1]", "[2]"],
+            }
+        ],
+        evidences=[
+            {
+                "evidence_id": "ev-trial-A-pass",
+                "claim_id": "c-multi-ref",
+                "citation_key": "[1]",
+                "reference_id": "ref-trial-A",
+                "evidence_text": "Trial A confirmed the primary endpoint with statistical significance.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            },
+            {
+                "evidence_id": "ev-trial-B-pass",
+                "claim_id": "c-multi-ref",
+                "citation_key": "[2]",
+                "reference_id": "ref-trial-B",
+                "evidence_text": "Trial B independently validated the clinical efficacy in European centers.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            },
+        ],
+    )
+
+    pairs = _build_pairs_from_input(inp)
+    assert len(pairs) == 1
+    pair = pairs[0]
+    assert pair.reference_id == "ref-trial-A"
+    assert "ref-trial-B" in pair.all_reference_ids
+    assert "[1]" in pair.all_citation_keys
+    assert "[2]" in pair.all_citation_keys
+    assert len(pair.evidence_passages) == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_evidence_unambiguous_association():
+    """Verify legacy evidence without claim_id correctly matches when citation is unambiguous."""
+    inp = S6VerifyInput(
+        document_id="doc-legacy-unambiguous",
+        claims=[
+            {
+                "id": "c-unique",
+                "claim_text": "Cryo-EM revealed 2.8 Angstrom resolution.",
+                "citation_key": "[42]",
+                "reference_id": "ref-unique-42",
+            },
+            {
+                "id": "c-other",
+                "claim_text": "Western blot demonstrated protein overexpression.",
+                "citation_key": "[10]",
+                "reference_id": "ref-western-10",
+            },
+        ],
+        evidences=[
+            {
+                "evidence_id": "ev-legacy-42",
+                # Note: No claim_id provided (legacy format)
+                "citation_key": "[42]",
+                "reference_id": "ref-unique-42",
+                "evidence_text": "The reconstructed cryo-EM map reached 2.8 Angstrom resolution.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            }
+        ],
+    )
+
+    pairs = _build_pairs_from_input(inp)
+    assert len(pairs) == 2
+
+    pair_unique = [p for p in pairs if p.claim_id == "c-unique"][0]
+    pair_other = [p for p in pairs if p.claim_id == "c-other"][0]
+
+    # c-unique unambiguously cites [42], so it receives the evidence
+    assert len(pair_unique.evidence_passages) == 1
+    assert pair_unique.evidence_passages[0].evidence_id == "ev-legacy-42"
+
+    # c-other cites [10], so it must not receive ev-legacy-42
+    assert len(pair_other.evidence_passages) == 0
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_legacy_evidence_not_silently_assigned():
+    """Verify legacy evidence without claim_id is NOT assigned when multiple claims cite same reference."""
+    inp = S6VerifyInput(
+        document_id="doc-legacy-ambiguous",
+        claims=[
+            {
+                "id": "c-first",
+                "claim_text": "First assertion citing shared reference.",
+                "citation_key": "[99]",
+                "reference_id": "ref-shared-99",
+            },
+            {
+                "id": "c-second",
+                "claim_text": "Second assertion citing shared reference.",
+                "citation_key": "[99]",
+                "reference_id": "ref-shared-99",
+            },
+        ],
+        evidences=[
+            {
+                "evidence_id": "ev-ambiguous-legacy",
+                # Note: No claim_id, but both claims cite [99] / ref-shared-99
+                "citation_key": "[99]",
+                "reference_id": "ref-shared-99",
+                "evidence_text": "Text from shared source without specified claim ownership.",
+                "source_type": EvidenceAvailabilityEnum.FULL_TEXT_AVAILABLE,
+            }
+        ],
+    )
+
+    pairs = _build_pairs_from_input(inp)
+    assert len(pairs) == 2
+
+    pair_first = [p for p in pairs if p.claim_id == "c-first"][0]
+    pair_second = [p for p in pairs if p.claim_id == "c-second"][0]
+
+    # Because ownership was ambiguous between two claims citing [99],
+    # it must NOT be assigned to either claim
+    assert len(pair_first.evidence_passages) == 0
+    assert len(pair_second.evidence_passages) == 0
