@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Explicitly allow frontend src/lib despite root Python lib/ ignore
+!src/lib/
+!src/lib/**

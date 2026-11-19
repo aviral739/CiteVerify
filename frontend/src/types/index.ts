@@ -1,22 +1,31 @@
-export enum VerdictEnum {
-  SUPPORTED = "supported",
-  PARTIALLY_SUPPORTED = "partially_supported",
-  UNSUPPORTED = "unsupported",
-  CONTRADICTORY = "contradictory",
-  POTENTIALLY_OUTDATED = "potentially_outdated",
-  INSUFFICIENT_EVIDENCE = "insufficient_evidence",
-}
+export const VerdictEnum = {
+  SUPPORTED: "supported",
+  PARTIALLY_SUPPORTED: "partially_supported",
+  UNSUPPORTED: "unsupported",
+  CONTRADICTORY: "contradictory",
+  POTENTIALLY_OUTDATED: "potentially_outdated",
+  INSUFFICIENT_EVIDENCE: "insufficient_evidence",
+} as const;
+export type VerdictEnum = (typeof VerdictEnum)[keyof typeof VerdictEnum];
 
-export enum EvidenceAvailabilityEnum {
-  FULL_TEXT_AVAILABLE = "full_text_available",
-  ABSTRACT_ONLY = "abstract_only",
-  UNAVAILABLE = "unavailable",
-}
+export const EvidenceAvailabilityEnum = {
+  FULL_TEXT_AVAILABLE: "full_text_available",
+  ABSTRACT_ONLY: "abstract_only",
+  UNAVAILABLE: "unavailable",
+} as const;
+export type EvidenceAvailabilityEnum = (typeof EvidenceAvailabilityEnum)[keyof typeof EvidenceAvailabilityEnum];
 
-export enum HumanDecisionEnum {
-  CONFIRMED = "confirmed",
-  OVERRIDDEN = "overridden",
-  DISPUTED = "disputed",
+export const HumanDecisionEnum = {
+  CONFIRMED: "confirmed",
+  OVERRIDDEN: "overridden",
+  DISPUTED: "disputed",
+} as const;
+export type HumanDecisionEnum = (typeof HumanDecisionEnum)[keyof typeof HumanDecisionEnum];
+
+export interface DocumentCreate {
+  title: string;
+  doi?: string | null;
+  authors?: string | null;
 }
 
 export interface DocumentResponse {
@@ -27,6 +36,10 @@ export interface DocumentResponse {
   status: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface DemoDocumentRequest {
+  sample_key?: string;
 }
 
 export interface ReferenceResponse {
@@ -52,6 +65,25 @@ export interface ClaimResponse {
   page_number?: number | null;
   is_active: boolean;
   created_at: string;
+}
+
+export interface ClaimPatchRequest {
+  claim_id: string;
+  is_active?: boolean;
+  claim_text?: string;
+}
+
+export interface ClaimPatchResponse {
+  success: boolean;
+  message: string;
+  updated_claim?: ClaimResponse | null;
+}
+
+export interface ReviewCreateRequest {
+  reviewer_id?: string;
+  human_decision: HumanDecisionEnum;
+  human_verdict?: VerdictEnum | null;
+  notes?: string | null;
 }
 
 export interface ReviewResponse {
@@ -103,11 +135,28 @@ export interface AuditLogResponse {
   created_at: string;
 }
 
-export interface SSEPipelineEvent {
-  event: string;
-  document_id?: string;
-  stage?: string;
-  message?: string;
-  payload?: any;
+export interface ExportResponse {
+  document_id: string;
+  export_format: string;
+  data: Record<string, any>;
 }
 
+export interface HealthResponse {
+  status: string;
+  version: string;
+  service: string;
+  database_connected: boolean;
+  llm_service_ready: boolean;
+}
+
+export interface SSEPipelineEvent {
+  event: string;
+  id?: string;
+  job_id?: string;
+  document_id?: string;
+  stage?: string;
+  event_type?: string;
+  message?: string;
+  payload?: any;
+  created_at?: string;
+}
