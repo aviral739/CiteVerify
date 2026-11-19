@@ -75,7 +75,11 @@ class VerificationOrchestrator:
 
             # Stage 3: Extract Claims
             job_registry.update_stage(job_id, "s3_claims", 37.5)
-            s3_out = await run_stage_3(S3ClaimsInput(document_id=document_id, sections=s1_out.sections))
+            s3_out = await run_stage_3(S3ClaimsInput(
+                document_id=document_id,
+                sections=s1_out.sections,
+                references=[r.model_dump() for r in s2_out.references]
+            ))
             executed_stages.append("s3_claims")
 
             # Stage 4: Resolve References
@@ -144,4 +148,3 @@ class VerificationOrchestrator:
 
 
 orchestrator = VerificationOrchestrator()
-
