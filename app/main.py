@@ -83,7 +83,20 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Health Check
+# Health & Root Check
+@app.get("/", tags=["system"])
+async def root():
+    """Root endpoint providing service status and links to documentation."""
+    return {
+        "service": settings.APP_NAME,
+        "version": "0.1.0",
+        "status": "ok",
+        "documentation": "/docs",
+        "health": "/health",
+        "message": "CiteVerify Backend API is running. Visit /docs for the interactive API documentation.",
+    }
+
+
 @app.get("/health", response_model=HealthResponse, tags=["system"])
 @app.get("/api/health", response_model=HealthResponse, tags=["system"])
 async def health_check():
