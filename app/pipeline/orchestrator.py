@@ -61,14 +61,17 @@ class VerificationOrchestrator:
         """
         logger.info(f"Starting pipeline orchestration for document {document_id}, job {job_id}")
         executed_stages = []
+        current_stage = "initialization"
 
         try:
             # Stage 1: Parse
+            current_stage = "s1_parse"
             job_registry.update_stage(job_id, "s1_parse", 12.5)
             s1_out = await run_stage_1(S1ParseInput(document_id=document_id, file_path=file_path))
             executed_stages.append("s1_parse")
 
             # Stage 2: Extract References
+            current_stage = "s2_references"
             job_registry.update_stage(job_id, "s2_references", 25.0)
             s2_out = await run_stage_2(S2ReferencesInput(
                 document_id=document_id,
@@ -78,6 +81,7 @@ class VerificationOrchestrator:
             executed_stages.append("s2_references")
 
             # Stage 3: Extract Claims
+            current_stage = "s3_claims"
             job_registry.update_stage(job_id, "s3_claims", 37.5)
             s3_out = await run_stage_3(S3ClaimsInput(
                 document_id=document_id,
@@ -87,6 +91,7 @@ class VerificationOrchestrator:
             executed_stages.append("s3_claims")
 
             # Stage 4: Resolve References
+            current_stage = "s4_resolve"
             job_registry.update_stage(job_id, "s4_resolve", 50.0)
             s4_out = await run_stage_4(S4ResolveInput(
                 document_id=document_id,
@@ -95,6 +100,7 @@ class VerificationOrchestrator:
             executed_stages.append("s4_resolve")
 
             # Stage 5: Evidence Retrieval
+            current_stage = "s5_evidence"
             job_registry.update_stage(job_id, "s5_evidence", 62.5)
             s5_out = await run_stage_5(S5EvidenceInput(
                 document_id=document_id,
@@ -104,6 +110,7 @@ class VerificationOrchestrator:
             executed_stages.append("s5_evidence")
 
             # Stage 6: Claim Verification
+            current_stage = "s6_verify"
             job_registry.update_stage(job_id, "s6_verify", 75.0)
 
             # Map S4 resolved references by citation_key or id using stable identifiers
@@ -156,6 +163,7 @@ class VerificationOrchestrator:
             executed_stages.append("s6_verify")
 
             # Stage 7: Assessment
+            current_stage = "s7_assessment"
             job_registry.update_stage(job_id, "s7_assessment", 87.5)
             s7_out = await run_stage_7(S7AssessmentInput(
                 document_id=document_id,
@@ -166,13 +174,28 @@ class VerificationOrchestrator:
             executed_stages.append("s7_assessment")
 
             # Stage 8: Persistence
-            job_registry.update_stage(job_id, "s8_persist", 100.0)
+            current_stage = "s8_persist"
+            job_registry.update_stage(job_id, "s8_persist", 95.0)
             s8_out = await run_stage_8(S8PersistInput(
                 document_id=document_id,
-                assessment_data=s7_out.model_dump()
+                job_id=job_id,
+                s1_parse=s1_out,
+                s2_references=s2_out,
+                s3_claims=s3_out,
+                s4_resolve=s4_out,
+                s5_evidence=s5_out,
+                s6_verify=s6_out,
+                s7_assessment=s7_out,
             ))
+
+            if not s8_out.persisted or s8_out.status != "completed":
+                raise RuntimeError(
+                    f"Stage 8 persistence failed for document '{document_id}': status='{s8_out.status}'"
+                )
+
             executed_stages.append("s8_persist")
 
+            # Mark 100% completed only AFTER S8 finishes successfully
             job_registry.mark_completed(job_id)
 
             return PipelineExecutionContract(
@@ -185,7 +208,7 @@ class VerificationOrchestrator:
             )
 
         except Exception as exc:
-            logger.error(f"Pipeline orchestration error: {exc}", exc_info=True)
+            logger.error(f"Pipeline orchestration error at stage '{current_stage}': {exc}", exc_info=True)
             job_registry.mark_failed(job_id, str(exc))
             return PipelineExecutionContract(
                 document_id=document_id,
@@ -193,7 +216,7 @@ class VerificationOrchestrator:
                 status="failed",
                 stages_executed=executed_stages,
                 is_mock_run=True,
-                summary={"error": str(exc)},
+                summary={"error": str(exc), "failed_stage": current_stage},
             )
 
 
