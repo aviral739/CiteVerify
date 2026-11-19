@@ -43,7 +43,12 @@ class ResultRepository(BaseRepository[Result]):
             select(Result)
             .join(Claim, Result.claim_id == Claim.id)
             .where(Claim.document_id == document_id)
-            .options(selectinload(Result.reviews))
+            .options(
+                selectinload(Result.reviews),
+                selectinload(Result.evidence),
+                selectinload(Result.claim),
+                selectinload(Result.reference),
+            )
             .order_by(Result.created_at.asc())
         )
         result = await self.session.execute(stmt)

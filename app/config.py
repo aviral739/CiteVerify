@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # External APIs
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-pro"
+    OPENALEX_API_KEY: Optional[str] = None
+    CROSSREF_MAILTO: str = "citeverify@example.com"
 
     # Rate limiting
     EXTERNAL_API_RATE_LIMIT: int = 30  # requests per minute

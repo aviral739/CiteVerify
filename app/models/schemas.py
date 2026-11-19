@@ -113,6 +113,13 @@ class ReferenceResponse(BaseModel):
     resolved_year: Optional[int] = None
     resolved_venue: Optional[str] = None
     resolution_confidence: float = 0.0
+    authors: Optional[str] = None
+    is_retracted: Optional[bool] = False
+    retraction_notice: Optional[str] = None
+    doi_title_mismatch: Optional[bool] = False
+    oa_pdf_url: Optional[str] = None
+    is_open_access: Optional[bool] = False
+    availability_state: Optional[str] = "unavailable"
     created_at: datetime
 
 
@@ -184,6 +191,19 @@ class ResultResponse(BaseModel):
     created_at: datetime
     reviews: List[ReviewResponse] = []
 
+    # Enriched UI associations
+    claim: Optional[ClaimResponse] = None
+    reference: Optional[ReferenceResponse] = None
+    evidence_quote: Optional[str] = None
+
+    # Verification dimensions
+    numerical_consistency: Optional[str] = None
+    numerical_details: Optional[str] = None
+    scope_audit: Optional[str] = None
+    scope_details: Optional[str] = None
+    is_retracted_source: Optional[bool] = False
+    retraction_warning: Optional[str] = None
+
 
 # ---------------- Review Request Schemas ----------------
 
@@ -237,4 +257,5 @@ class ExportResponse(BaseModel):
     document_id: str
     export_format: str
     data: Dict[str, Any]
+    content: Optional[str] = None
 

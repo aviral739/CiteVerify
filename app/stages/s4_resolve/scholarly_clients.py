@@ -5,6 +5,7 @@ import logging
 from typing import Any, Dict, List, Optional
 import httpx
 
+from app.config import get_settings
 from app.core.http import get_http_client
 from app.stages.s2_references.doi_utils import normalize_doi
 from app.stages.s4_resolve.cache import PersistentSQLiteCache, s4_cache
@@ -41,15 +42,21 @@ class ScholarlyAPIClient:
     async def _safe_get(self, url: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
         """Perform HTTP GET with retries, timeout, and status code handling."""
         client = await get_http_client()
+        settings = get_settings()
+        mailto = getattr(settings, "CROSSREF_MAILTO", "citeverify@example.com") or "citeverify@example.com"
         default_headers = {
-            "User-Agent": "CiteVerify/0.1.0 (https://github.com/aviral739/CiteVerify; mailto:citeverify@example.com)"
+            "User-Agent": f"CiteVerify/0.1.0 (https://github.com/aviral739/CiteVerify; mailto:{mailto})"
         }
         if headers:
             default_headers.update(headers)
 
+        req_params = dict(params) if params else {}
+        if "openalex.org" in url and getattr(settings, "OPENALEX_API_KEY", None):
+            req_params["api_key"] = settings.OPENALEX_API_KEY
+
         for attempt in range(self.max_retries + 1):
             try:
-                response = await client.get(url, params=params, headers=default_headers, timeout=self.timeout)
+                response = await client.get(url, params=req_params or None, headers=default_headers, timeout=self.timeout)
                 if response.status_code == 200:
                     return response.json()
                 elif response.status_code == 404:
@@ -92,8 +99,10 @@ class ScholarlyAPIClient:
 
         url = f"https://api.crossref.org/works/{norm}"
         client = await get_http_client()
+        settings = get_settings()
+        mailto = getattr(settings, "CROSSREF_MAILTO", "citeverify@example.com") or "citeverify@example.com"
         default_headers = {
-            "User-Agent": "CiteVerify/0.1.0 (https://github.com/aviral739/CiteVerify; mailto:citeverify@example.com)"
+            "User-Agent": f"CiteVerify/0.1.0 (https://github.com/aviral739/CiteVerify; mailto:{mailto})"
         }
 
         # Safe fetch with status detection
@@ -192,15 +201,20 @@ class ScholarlyAPIClient:
 
         url = f"https://api.openalex.org/works/https://doi.org/{norm}"
         client = await get_http_client()
+        settings = get_settings()
+        mailto = getattr(settings, "CROSSREF_MAILTO", "citeverify@example.com") or "citeverify@example.com"
         default_headers = {
-            "User-Agent": "CiteVerify/0.1.0 (https://github.com/aviral739/CiteVerify; mailto:citeverify@example.com)"
+            "User-Agent": f"CiteVerify/0.1.0 (https://github.com/aviral739/CiteVerify; mailto:{mailto})"
         }
+        params = {}
+        if getattr(settings, "OPENALEX_API_KEY", None):
+            params["api_key"] = settings.OPENALEX_API_KEY
 
         data = None
         status_code = None
         for attempt in range(self.max_retries + 1):
             try:
-                resp = await client.get(url, headers=default_headers, timeout=self.timeout)
+                resp = await client.get(url, params=params or None, headers=default_headers, timeout=self.timeout)
                 status_code = resp.status_code
                 if resp.status_code == 200:
                     data = resp.json()
@@ -254,6 +268,66 @@ class ScholarlyAPIClient:
         parsed = self._parse_openalex_work(work, cache_key, default_confidence=0.85)
         await self.cache.set("openalex", f"title:{clean_title}", parsed)
         return parsed
+
+    async def search_crossref_by_title(self, title: str) -> Optional[Dict[str, Any]]:
+        """Search Crossref works by title string with persistent caching."""
+        clean_title = title.strip().lower()
+        if len(clean_title) < 8:
+            return None
+
+        cache_key = f"crossref:title:{clean_title}"
+        if cache_key in _RESOLUTION_CACHE:
+            return _RESOLUTION_CACHE[cache_key]
+
+        is_hit, cached_data = await self.cache.get("crossref", f"title:{clean_title}")
+        if is_hit:
+            _RESOLUTION_CACHE[cache_key] = cached_data
+            return cached_data
+
+        url = "https://api.crossref.org/works"
+        params = {"query.title": clean_title, "rows": 1}
+        data = await self._safe_get(url, params=params)
+        if not data or "message" not in data or not data["message"].get("items"):
+            await self.cache.set("crossref", f"title:{clean_title}", None)
+            return None
+
+        item = data["message"]["items"][0]
+        titles = item.get("title", [])
+        matched_title = titles[0].strip() if titles else ""
+        doi_norm = normalize_doi(item.get("DOI"))
+
+        year = None
+        issued = item.get("issued", {}).get("date-parts", [[]])
+        if issued and issued[0] and isinstance(issued[0][0], int):
+            year = issued[0][0]
+
+        author_list = []
+        for a in item.get("author", []):
+            given = a.get("given", "").strip()
+            family = a.get("family", "").strip()
+            if family:
+                author_list.append(f"{family}, {given}" if given else family)
+        authors = "; ".join(author_list) if author_list else None
+
+        container = item.get("container-title", [])
+        venue = container[0].strip() if container else None
+
+        result = {
+            "source": "crossref",
+            "doi": doi_norm,
+            "title": matched_title,
+            "year": year,
+            "authors": authors,
+            "venue": venue,
+            "url": item.get("URL") or (f"https://doi.org/{doi_norm}" if doi_norm else None),
+            "oa_pdf_url": None,
+            "is_retracted": False,
+            "retraction_notice": None,
+            "confidence": 0.85,
+        }
+        _RESOLUTION_CACHE[cache_key] = result
+        await self.cache.set("crossref", f"title:{clean_title}", result)
+        return result
 
     def _parse_openalex_work(self, item: Dict[str, Any], cache_key: str, default_confidence: float = 0.95) -> Dict[str, Any]:
         """Parse raw OpenAlex work object into normalized dictionary."""

@@ -74,6 +74,15 @@ def compute_title_similarity(title1: Optional[str], title2: Optional[str]) -> fl
     return round(float(similarity), 4)
 
 
+def _format_authors(authors: Any) -> Optional[str]:
+    """Ensure authors is a formatted string or None."""
+    if not authors:
+        return None
+    if isinstance(authors, list):
+        return ", ".join(str(a).strip() for a in authors if a)
+    return str(authors).strip()
+
+
 def _extract_epmc_data(res: Any) -> Dict[str, Any]:
     """Extract standard dictionary attributes from a EuropePMCResult instance or dict."""
     if res is None:
@@ -159,6 +168,8 @@ class ReferenceResolver:
         raw_text = raw_ref.get("raw_citation") or raw_ref.get("raw_text") or ""
         provided_title = raw_ref.get("title")
         provided_doi = raw_ref.get("doi") or extract_doi(raw_text)
+        if not provided_doi and raw_ref.get("arxiv_id"):
+            provided_doi = f"10.48550/arxiv.{raw_ref['arxiv_id']}"
         norm_doi = normalize_doi(provided_doi) if provided_doi else None
 
         # Check for PMCID in raw_ref or raw_text
@@ -338,7 +349,7 @@ class ReferenceResolver:
                     original_title=provided_title,
                     doi=norm_doi,
                     pmcid=pmcid,
-                    authors=merged_authors,
+                    authors=_format_authors(merged_authors),
                     year=merged_year,
                     venue=merged_venue,
                     url=primary.get("url") or f"https://doi.org/{norm_doi}",
@@ -409,7 +420,7 @@ class ReferenceResolver:
                     original_title=provided_title,
                     doi=disc_doi,
                     pmcid=epmc_pmcid_data.get("pmcid") or pmcid_candidate,
-                    authors=epmc_pmcid_data.get("authors") or raw_ref.get("authors"),
+                    authors=_format_authors(epmc_pmcid_data.get("authors") or raw_ref.get("authors")),
                     year=epmc_pmcid_data.get("year") or raw_ref.get("year"),
                     venue=epmc_pmcid_data.get("venue"),
                     url=f"https://europepmc.org/article/PMC/{pmcid_candidate.replace('PMC', '')}",
@@ -441,6 +452,9 @@ class ReferenceResolver:
 
         if search_title and len(search_title) > 8:
             matched_work = await self.client.search_openalex_by_title(search_title)
+            if not matched_work and hasattr(self.client, "search_crossref_by_title"):
+                matched_work = await self.client.search_crossref_by_title(search_title)
+
             if matched_work:
                 is_retracted = matched_work.get("is_retracted", False)
                 retraction_notice = matched_work.get("retraction_notice")
@@ -455,6 +469,13 @@ class ReferenceResolver:
                 ftext = matched_work.get("full_text")
                 avail = "full_text" if (oa_pdf or ftext) else ("abstract_only" if abstr else "unavailable")
 
+                matched_source_str = matched_work.get("source", "openalex")
+                matched_source = (
+                    ResolutionSourceEnum(matched_source_str)
+                    if matched_source_str in ResolutionSourceEnum._value2member_map_
+                    else ResolutionSourceEnum.OPENALEX
+                )
+
                 return S4ResolvedReference(
                     id=stable_id,
                     citation_key=citation_key,
@@ -463,7 +484,7 @@ class ReferenceResolver:
                     original_title=provided_title,
                     doi=matched_work.get("doi"),
                     pmcid=matched_work.get("pmcid") or pmcid_candidate,
-                    authors=matched_work.get("authors") or raw_ref.get("authors"),
+                    authors=_format_authors(matched_work.get("authors") or raw_ref.get("authors")),
                     year=matched_work.get("year") or raw_ref.get("year"),
                     venue=matched_work.get("venue"),
                     url=matched_work.get("url"),
@@ -477,7 +498,7 @@ class ReferenceResolver:
                     is_retracted=is_retracted,
                     retraction_notice=retraction_notice,
                     confidence=matched_work.get("confidence", 0.85),
-                    source=ResolutionSourceEnum.OPENALEX,
+                    source=matched_source,
                     status=ResolutionStatusEnum.RETRACTED if is_retracted else ResolutionStatusEnum.RESOLVED,
                     raw_citation=raw_text,
                     warnings=warnings,
@@ -495,7 +516,7 @@ class ReferenceResolver:
             original_title=provided_title,
             doi=norm_doi,
             pmcid=pmcid_candidate,
-            authors=raw_ref.get("authors"),
+            authors=_format_authors(raw_ref.get("authors")),
             year=raw_ref.get("year"),
             venue=None,
             url=f"https://doi.org/{norm_doi}" if norm_doi else None,

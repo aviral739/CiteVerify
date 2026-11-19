@@ -307,6 +307,7 @@ export interface ExportResponse {
   document_id: string;
   export_format: string;
   data: Record<string, any>;
+  content?: string | null;
 }
 
 export interface HealthResponse {

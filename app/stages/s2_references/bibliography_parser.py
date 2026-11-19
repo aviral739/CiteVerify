@@ -140,6 +140,8 @@ def parse_reference_metadata(citation_key: str, raw_citation: str) -> ExtractedR
     ref_id = str(uuid.uuid4())
     doi = extract_doi(raw_citation)
     arxiv_id = extract_arxiv_id(raw_citation)
+    if not doi and arxiv_id:
+        doi = f"10.48550/arxiv.{arxiv_id}"
     url = extract_url(raw_citation)
 
     # Clean citation text without leading key for metadata parsing
@@ -149,53 +151,59 @@ def parse_reference_metadata(citation_key: str, raw_citation: str) -> ExtractedR
 
     # Extract year (e.g. (2017) or 2017.)
     year: Optional[int] = None
-    year_match = re.search(r"\(?(19\d{2}|20[0-2]\d)\)?", clean_text)
-    if year_match:
+    y_match = re.search(r"\b(19\d{2}|20[0-2]\d)\b", clean_text)
+    if y_match:
         try:
-            year = int(year_match.group(1))
+            year = int(y_match.group(1))
         except ValueError:
             year = None
 
-    # Authors heuristic: text before year or first period/comma cluster
     authors: Optional[str] = None
     title: Optional[str] = None
     venue: Optional[str] = None
 
-    if year_match and year_match.start() > 3:
-        potential_authors = clean_text[: year_match.start()].strip().rstrip(".,")
-        if len(potential_authors) > 2 and not any(k in potential_authors.lower() for k in ["http", "doi", "www"]):
-            authors = potential_authors
-
-        remaining = clean_text[year_match.end() :].strip().lstrip(".,): ")
-        # Title is often between quotes or up to the next period
-        quote_match = re.search(r'["\u201c]([^"\u201d]+)["\u201d]', remaining)
-        if quote_match:
-            title = quote_match.group(1).strip()
-            post_title = remaining[quote_match.end() :].strip().lstrip("., ")
-            if post_title:
-                venue = post_title.split(".")[0].strip() or None
-        else:
-            parts = [p.strip() for p in remaining.split(".") if p.strip()]
-            if parts:
-                title = parts[0].strip()
-                if len(parts) > 1:
-                    venue = parts[1].strip()
+    # Check for quoted title
+    quote_match = re.search(r'["\u201c]([^"\u201d]+)["\u201d]', clean_text)
+    if quote_match:
+        title = quote_match.group(1).strip()
+        before_quote = clean_text[: quote_match.start()].strip().rstrip(".,(")
+        after_quote = clean_text[quote_match.end() :].strip().lstrip("., ")
+        authors = before_quote or None
+        venue = after_quote or None
     else:
-        # Fallback segmentation by period
-        parts = [p.strip() for p in clean_text.split(".") if p.strip()]
-        if len(parts) >= 2:
-            authors = parts[0]
-            title = parts[1]
-            if len(parts) >= 3:
-                venue = parts[2]
-        elif len(parts) == 1:
-            title = parts[0]
+        # Check for Author-Year style: Author (Year). Title. Venue
+        paren_year_match = re.search(r"\((19\d{2}|20[0-2]\d)\)", clean_text)
+        if (
+            paren_year_match
+            and paren_year_match.start() < 120
+            and clean_text[: paren_year_match.start()].count(".") <= 2
+        ):
+            potential_authors = clean_text[: paren_year_match.start()].strip().rstrip(".,")
+            if len(potential_authors) > 2 and not any(k in potential_authors.lower() for k in ["http", "doi", "www"]):
+                authors = potential_authors
+            remaining = clean_text[paren_year_match.end() :].strip().lstrip(".,: ")
+            parts = [p.strip() for p in re.split(r"(?<!\b[A-Z])\.\s+", remaining) if p.strip()]
+            if parts:
+                title = parts[0]
+                if len(parts) > 1:
+                    venue = ". ".join(parts[1:]).strip() or None
+        else:
+            # Period-delimited academic style: Authors. Title. Venue, Year.
+            # Avoid splitting on single-letter middle initials like "V." or "E." or "N."
+            parts = [p.strip() for p in re.split(r"(?<!\b[A-Z])\.\s+", clean_text) if p.strip()]
+            if len(parts) >= 2:
+                authors = parts[0]
+                title = parts[1]
+                if len(parts) > 2:
+                    venue = ". ".join(parts[2:]).strip() or None
+            elif len(parts) == 1:
+                title = parts[0]
 
-    # Clean up authors/title if too short or obviously wrong
-    if authors and len(authors) > 200:
-        authors = authors[:200]
+    # Clean up authors/title if too long
+    if authors and len(authors) > 250:
+        authors = authors[:250].strip()
     if title and len(title) > 300:
-        title = title[:300]
+        title = title[:300].strip()
 
     return ExtractedReferenceItem(
         reference_id=ref_id,

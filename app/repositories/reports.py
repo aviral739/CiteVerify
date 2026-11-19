@@ -8,10 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.schemas import (
+    ClaimResponse,
     DocumentReportResponse,
     DocumentResponse,
     EvidenceAvailabilityEnum,
     HumanDecisionEnum,
+    ReferenceResponse,
     ResultResponse,
     ReviewResponse,
     VerdictEnum,
@@ -176,6 +178,10 @@ class DocumentReportRepository:
             if v_enum.value in results_summary:
                 results_summary[v_enum.value] += 1
 
+        # Build lookup maps for enrichment
+        claim_map = {c.id: ClaimResponse.model_validate(c) for c in claims}
+        ref_map = {r.id: ReferenceResponse.model_validate(r) for r in refs}
+
         # Transform results into ResultResponse models
         formatted_results: List[ResultResponse] = []
         for r in results:
@@ -191,6 +197,13 @@ class DocumentReportRepository:
                 )
                 for rev in (r.reviews or [])
             ]
+
+            # Enrich claim, reference and evidence quote
+            c_resp = claim_map.get(r.claim_id) or (ClaimResponse.model_validate(r.claim) if getattr(r, "claim", None) else None)
+            ref_id = getattr(r, "reference_id", None) or (c_resp.reference_id if c_resp else None)
+            ref_resp = ref_map.get(ref_id) if ref_id else (ReferenceResponse.model_validate(r.reference) if getattr(r, "reference", None) else None)
+            evidence_quote = r.evidence.evidence_text if getattr(r, "evidence", None) and r.evidence.evidence_text else None
+
             formatted_results.append(
                 ResultResponse(
                     id=r.id,
@@ -204,6 +217,15 @@ class DocumentReportRepository:
                     model_name=r.model_name,
                     created_at=r.created_at,
                     reviews=rev_responses,
+                    claim=c_resp,
+                    reference=ref_resp,
+                    evidence_quote=evidence_quote,
+                    numerical_consistency=getattr(r, "numerical_consistency", None),
+                    numerical_details=getattr(r, "numerical_details", None),
+                    scope_audit=getattr(r, "scope_audit", None),
+                    scope_details=getattr(r, "scope_details", None),
+                    is_retracted_source=getattr(r, "is_retracted_source", False) or (ref_resp.is_retracted if ref_resp else False),
+                    retraction_warning=getattr(r, "retraction_warning", None) or (ref_resp.retraction_notice if ref_resp else None),
                 )
             )
 

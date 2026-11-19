@@ -35,6 +35,31 @@ def normalize_academic_text(text: str) -> str:
     # Only de-hyphenate if hyphen is between lowercase letters: [a-z]-\n[a-z]
     text = re.sub(r"([a-zA-Z])-\n([a-zA-Z])", r"\1\2", text)
 
+    # 5b. Ensure recognized academic headings have double newlines around them
+    heading_pattern = re.compile(
+        r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s*)?(?:abstract|introduction|related\s+work|background|methodology|methods|model\s+architecture|experiments|results|discussion|conclusions?|references|acknowledgements?)\b",
+        re.IGNORECASE,
+    )
+    raw_lines = text.split("\n")
+    spaced_lines = []
+    for l in raw_lines:
+        s = l.strip()
+        is_heading = (
+            s
+            and len(s) < 80
+            and (
+                heading_pattern.match(s)
+                or re.match(r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", s)
+            )
+        )
+        if is_heading:
+            spaced_lines.append("")
+            spaced_lines.append(s)
+            spaced_lines.append("")
+        else:
+            spaced_lines.append(l)
+    text = "\n".join(spaced_lines)
+
     # 6. Join broken lines within paragraphs while preserving paragraph breaks (double newlines)
     # Split into paragraphs by 2 or more newlines
     paragraphs = re.split(r"\n{2,}", text)
@@ -45,13 +70,14 @@ def normalize_academic_text(text: str) -> str:
         raw_lines = [line.strip() for line in para.split("\n") if line.strip()]
         if not raw_lines:
             continue
-        
+
         # Preserve lines if any line in this paragraph looks like a section heading or reference item
         has_structural_line = any(
-            re.match(r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", l)
+            heading_pattern.match(l)
+            or re.match(r"^(?:(?:\d+(?:\.\d+)*|[IVX]+)\.?\s+[A-Za-z]|#{1,4}\s+|\[\d+\])", l)
             for l in raw_lines
         )
-        if has_structural_line:
+        if has_structural_line or len(raw_lines) == 1:
             cleaned_paragraphs.append("\n".join(raw_lines))
         else:
             cleaned_para = " ".join(raw_lines)

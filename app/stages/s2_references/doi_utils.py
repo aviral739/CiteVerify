@@ -10,9 +10,9 @@ DOI_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# arXiv identifier pattern: arXiv:YYMM.NNNNN or arXiv:arch-ive/YYMMNNN
+# arXiv identifier pattern: arXiv:YYMM.NNNNN or arXiv:arch-ive/YYMMNNN or CoRR, abs/YYMM.NNNNN
 ARXIV_PATTERN = re.compile(
-    r"(?:arxiv:\s*|https?://arxiv\.org/(?:abs|pdf)/)(\d{4}\.\d{4,5}(?:v\d+)?|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})",
+    r"(?:arxiv:\s*|https?://arxiv\.org/(?:abs|pdf)/|corr,\s*abs/|\babs/)(\d{4}\.\d{4,5}(?:v\d+)?|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})",
     re.IGNORECASE,
 )
 

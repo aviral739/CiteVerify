@@ -212,11 +212,26 @@ export const ResultsPage: React.FC = () => {
   const handleExport = async (format = 'json') => {
     setIsExportMenuOpen(false);
     try {
-      const data = await exportDocument(id || 'sample-demo-4092', format);
-      const exportContent = format === 'json' ? JSON.stringify(data, null, 2) : String(data.data || JSON.stringify(data));
-      const blob = new Blob([exportContent], {
-        type: format === 'json' ? 'application/json' : 'text/plain',
-      });
+      const data: any = await exportDocument(id || 'sample-demo-4092', format);
+      let exportContent = '';
+      if (format === 'json') {
+        exportContent = JSON.stringify(data.data || data, null, 2);
+      } else if (data.content) {
+        exportContent = data.content;
+      } else if (typeof data.data === 'string') {
+        exportContent = data.data;
+      } else if (data.data?.content) {
+        exportContent = data.data.content;
+      } else {
+        exportContent = JSON.stringify(data, null, 2);
+      }
+      const mimeType =
+        format === 'json'
+          ? 'application/json'
+          : format === 'csv'
+          ? 'text/csv;charset=utf-8;'
+          : 'text/plain;charset=utf-8;';
+      const blob = new Blob([exportContent], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
