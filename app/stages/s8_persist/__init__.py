@@ -1,12 +1,27 @@
-"""Stage 8: Persistence Engine.
+"""Stage 8: Database Persistence Engine.
 
 Coordinates relational database persistence of all extracted, resolved,
-retrieved, and verified artifacts across Stages S1 through S7 using official repositories.
+retrieved, and verified artifacts across Stages S1 through S7 into relational storage.
 """
 
 import logging
 from typing import Optional, Union
 
+from app.repositories import (
+    AssessmentRepository,
+    AuditLogRepository,
+    BaseRepository,
+    ClaimRepository,
+    DocumentReportRepository,
+    DocumentRepository,
+    EventRepository,
+    EvidenceRepository,
+    JobRepository,
+    ReferenceRepository,
+    ReportRepository,
+    ResultRepository,
+    ReviewRepository,
+)
 from app.stages.s8_persist.engine import PersistenceEngine, persistence_engine
 from app.stages.s8_persist.models import (
     LegacyS8PersistInput,
@@ -25,19 +40,34 @@ __all__ = [
     "persistence_engine",
     "adapt_legacy_input",
     "run_stage_8",
+    "AssessmentRepository",
+    "AuditLogRepository",
+    "BaseRepository",
+    "ClaimRepository",
+    "DocumentReportRepository",
+    "DocumentRepository",
+    "EventRepository",
+    "EvidenceRepository",
+    "JobRepository",
+    "ReferenceRepository",
+    "ReportRepository",
+    "ResultRepository",
+    "ReviewRepository",
 ]
 
 
 async def run_stage_8(
-    input_data: Union[S8PersistInput, LegacyS8PersistInput],
+    input_data: Union[S8PersistInput, LegacyS8PersistInput, dict],
     engine: Optional[PersistenceEngine] = None,
 ) -> S8PersistOutput:
-    """Execute Stage 8: Persistence.
+    """Execute Stage 8: Database Persistence.
 
-    Atomically commits outputs from S1–S7 into the database.
+    Atomically commits outputs from S1 through S7 into the relational database.
     """
     if isinstance(input_data, LegacyS8PersistInput):
         input_data = adapt_legacy_input(input_data)
+    elif isinstance(input_data, dict):
+        input_data = S8PersistInput.model_validate(input_data)
 
     logger.info(
         f"Executing Stage 8 persistence for document {input_data.document_id} "
