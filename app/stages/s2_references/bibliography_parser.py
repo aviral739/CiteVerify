@@ -121,9 +121,9 @@ def segment_bibliography_entries(bib_text: str) -> List[Tuple[str, str]]:
         return entries
 
     # Author-year / unnumbered bibliography:
-    # Check if split by double newlines produces good entries
+    # Check if split by double newlines produces good individual entries (average length <= 600 chars)
     raw_paras = re.split(r"\n{2,}", bib_text)
-    if len(raw_paras) >= 3:
+    if len(raw_paras) >= 3 and (len(bib_text) / len(raw_paras) <= 600):
         for i, para in enumerate(raw_paras):
             cleaned_entry = re.sub(r"\s+", " ", para).strip()
             if len(cleaned_entry) > 15:
@@ -134,7 +134,7 @@ def segment_bibliography_entries(bib_text: str) -> List[Tuple[str, str]]:
     # Line-by-line author-year segmentation
     ay_entries: List[str] = []
     curr_lines: List[str] = []
-    for line in lines:
+    for idx, line in enumerate(lines):
         is_new_entry = False
         if curr_lines:
             prev_text = " ".join(curr_lines).strip()
@@ -146,7 +146,9 @@ def segment_bibliography_entries(bib_text: str) -> List[Tuple[str, str]]:
             is_keyword = bool(re.match(r"^(?:in\s+|pages?\s+|arxiv\b|http|doi|vol\b|volume\b|no\.\s*|and\s+|et\s+al\b|proceedings\b|journal\b|conference\b)", line, re.IGNORECASE))
             not_continuation = not (is_lower_or_digit or is_keyword)
 
-            if prev_has_year and prev_terminal and author_start and not is_year_start and not_continuation and len(prev_text) > 35:
+            has_future_year = bool(re.search(r"\b(19\d\d|20[0-2]\d)[a-z]?\b", " ".join(lines[idx:min(len(lines), idx + 5)])))
+
+            if prev_has_year and prev_terminal and author_start and has_future_year and not is_year_start and not_continuation and len(prev_text) > 35:
                 is_new_entry = True
         else:
             if re.match(r"^[A-Z\u00C0-\u024F]", line):
@@ -235,7 +237,12 @@ def parse_reference_metadata(citation_key: str, raw_citation: str) -> ExtractedR
             # Period-delimited academic style: Authors. Title. Venue, Year.
             # Avoid splitting on single-letter middle initials like "V." or "E." or "N."
             parts = [p.strip() for p in re.split(r"(?<!\b[A-Z])\.\s+", clean_text) if p.strip()]
-            if len(parts) >= 2:
+            if len(parts) >= 3 and re.match(r"^(?:19\d\d|20[0-2]\d)[a-z]?$", parts[1]):
+                authors = parts[0]
+                title = parts[2]
+                if len(parts) > 3:
+                    venue = ". ".join(parts[3:]).strip() or None
+            elif len(parts) >= 2:
                 authors = parts[0]
                 title = parts[1]
                 if len(parts) > 2:
@@ -251,8 +258,11 @@ def parse_reference_metadata(citation_key: str, raw_citation: str) -> ExtractedR
 
     # For author-year references with artificial keys (ref_X), generate an author-year citation key
     if (citation_key.startswith("ref_") or not citation_key) and authors and year:
-        surname = authors.split()[0].rstrip(",.")
-        citation_key = f"{surname} et al. [{year}]" if len(authors.split()) > 2 else f"{surname} [{year}]"
+        first_author = authors.split(",")[0].split(" and ")[0].split(" & ")[0].strip()
+        tokens = first_author.split()
+        surname = tokens[-1].rstrip(".,") if len(tokens) > 1 else first_author.rstrip(".,")
+        is_multi = len(authors.split()) > 2 or "et al" in authors.lower() or "and" in authors.lower() or "&" in authors
+        citation_key = f"{surname} et al. [{year}]" if is_multi else f"{surname} [{year}]"
 
     return ExtractedReferenceItem(
         reference_id=ref_id,
