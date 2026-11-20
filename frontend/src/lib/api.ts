@@ -17,7 +17,7 @@ import type {
 
 export const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 export const ALLOWED_EXTENSIONS = ['.pdf', '.docx'] as const;
-export const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30 seconds
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60000; // 60 seconds (allows for Render cold starts)
 
 /**
  * Custom API Error class with HTTP status code and parsed details from the backend.
@@ -34,7 +34,28 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || '';
+/**
+ * Resolves the API base URL.
+ * Priority:
+ * 1. Explicit import.meta.env.VITE_API_BASE_URL (trimmed of trailing slashes)
+ * 2. When deployed on Netlify (*.netlify.app), defaults to the Render production backend
+ * 3. Empty string '' for local Vite development proxy
+ */
+export function getApiBaseUrl(): string {
+  const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || '';
+  if (typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return envUrl.trim().replace(/\/+$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    if (hostname.includes('netlify.app')) {
+      return 'https://citeverify-95l9.onrender.com';
+    }
+  }
+  return '';
+}
+
+export const API_BASE = getApiBaseUrl();
 const CONFIGURED_UPLOAD_ENDPOINT =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_UPLOAD_ENDPOINT) || '';
 
@@ -91,7 +112,8 @@ async function request<T>(
   options: RequestInit = {},
   timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS
 ): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
+  const apiBase = getApiBaseUrl();
+  const url = `${apiBase}${endpoint}`;
   const headers = new Headers(options.headers || {});
 
   if (options.body && !(options.body instanceof FormData)) {
@@ -117,12 +139,17 @@ async function request<T>(
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new ApiError(`Request timeout: CiteVerify API at ${url} did not respond within ${timeoutMs / 1000}s.`, 408);
+      throw new ApiError(
+        `Request timeout: CiteVerify API at ${url} did not respond within ${timeoutMs / 1000}s. The backend may be spinning up from a cold start on Render. Please retry shortly.`,
+        408
+      );
     }
-    throw new ApiError(
-      `Network connection failed: Unable to reach CiteVerify API at ${url}. ${err.message || ''}`.trim(),
-      0
-    );
+    const isFetchFailure =
+      err instanceof TypeError && (err.message === 'Failed to fetch' || err.message.includes('fetch'));
+    const message = isFetchFailure
+      ? `Network connection failed: Unable to reach CiteVerify API at ${url}. Possible causes: backend cold start in progress, CORS preflight blocked, or server offline. Check backend status or retry shortly.`
+      : `Network connection failed: Unable to reach CiteVerify API at ${url}. ${err.message || ''}`.trim();
+    throw new ApiError(message, 0);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -141,6 +168,9 @@ async function request<T>(
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`;
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      message = `Server unavailable (${response.status}): CiteVerify backend on Render is starting up or temporarily unreachable. Please retry in 30 seconds.`;
+    }
     let details: any = undefined;
 
     if (data && typeof data === 'object') {
@@ -425,5 +455,6 @@ export async function exportDocument(
  * Helper to construct the Server-Sent Events (SSE) streaming URL
  */
 export function getDocumentEventsUrl(id: string): string {
-  return `${API_BASE}/api/documents/${encodeURIComponent(id)}/events`;
+  const apiBase = getApiBaseUrl();
+  return `${apiBase}/api/documents/${encodeURIComponent(id)}/events`;
 }

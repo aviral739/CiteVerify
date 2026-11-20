@@ -48,13 +48,15 @@ app = FastAPI(
 )
 
 # CORS Configuration
-origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+origins = [str(o).strip().rstrip("/") for o in settings.CORS_ORIGINS] if isinstance(settings.CORS_ORIGINS, list) else [str(settings.CORS_ORIGINS).strip().rstrip("/")]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["Content-Type", "Content-Disposition", "Content-Length", "X-Request-ID"],
+    max_age=600,
 )
 
 
